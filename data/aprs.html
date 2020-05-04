@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+<form method="POST" action="/saveaprs">
+<table>
+
+<tr><td>Callsign to transmit as<br />
+<input type="text" name="mycall" maxlength="10" value="###MYCALL###"></td></tr>
+
+<tr><td><br />APRS passcode<br />
+<input type="text" name="passcode" maxlength="7" value="###APRSPASS###"></td></tr>
+
+<tr><td><br />Comment text to send with beacon<br />
+<input type="text" name="comment" maxlength="32" value="###COMMENT###"></td></tr>
+
+<tr><td><br />APRS-IS Server Hostname<br />Port is fixed to TCP 14580<br />
+<input type="text" name="aprshost" maxlength="255" value="###APRSHOST###"></td></tr>
+
+<tr><td><br />APRS Symbol Table<br />
+<select id="symtable" name="symbtable" selected="###SYMTABLE###">
+  <option value="/">/ - Primary table</option>
+  <option value="\">\ - Secondary table</option>
+</select>
+</td></tr>
+
+<tr><td><br />APRS Symbol<br />
+<input type="text" name="symbol" maxlength="255" value="###SYMBOL###"></td></tr>
+
+</table>
+<br />
+<table>
+<tr><td class="even"><input type="submit" value="save"></td>
+<td class="even"><a class="fakebutton" href="./">cancel</a></td></tr>
+</table>
+</form>
+</body>
+</html>
+

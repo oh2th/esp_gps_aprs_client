@@ -1,5 +1,5 @@
 /*
-   esp8266 Wifi Homeyduino skeloton client
+   ESP GPS APRS-IS Client with SmartBeacon
 
    See https://github.com/oh2th/esp_gps_aprs_client
 */
@@ -67,7 +67,7 @@ char comment[32];               // Comment string added to position
 char aprshost[255];             // APRS-IS host
 char symtable[2];               // APRS Symbol table
 char symbol[2];                 // APRS Symbol
-int aprsport = 14580;           // Port is fixed to TCP/14580
+uint16_t aprsport = 14580;      // Port is fixed to TCP/14580
 
 // APRS SmartBeacon configuration
 //Slow Speed = Speed below which I consider myself "stopped" 10 m.p.h.
@@ -106,6 +106,8 @@ ESP8266WiFiMulti WiFiMulti;
 ESP8266WebServer server(80);
 IPAddress apIP(192, 168, 4, 1); // portal ip address
 DNSServer dnsServer;
+WiFiClient client;
+
 File file;
 
 /* ------------------------------------------------------------------------------- */
@@ -208,20 +210,28 @@ void loop() {
 
       smartDelay(100); // initial feeding of the GPS to make sure we have data
 
-      // Lets check HDOP 0= no fix, good HDOP 100 should be less than 500
-      float hdop_value = gps.hdop.value() / 100;
-      if( hdop_value > 0 && hdop_value < 5 ) {
+      // For a good position report HDOP should be 1-2 for excellent position or no more that 5 for good position, a value of 5-10 is still moderate
+      // Value of 0 or 99 means there is no coverage.
+      float hdop_value = (float)gps.hdop.value() / 100;
+      if ( hdop_value > 0 && hdop_value < 10 ) {
         const char* report = positionReportWithAltitude();
-        if(report[0] != '\0') {
-          Serial.print(report);
-          Serial.println();
+        if (report[0] != '\0') {
+          // Position Report available, lets transmit to APRS-IS
+          if(client.connect(aprshost, aprsport)) {
+            Serial.printf("HDOP=%0.1f and connected to %s:%u\n", hdop_value, aprshost, aprsport);
+            client.printf("user %s pass %s\r\n", mycall, aprspass);
+            delay(100);
+            client.printf("%s%s\r\n", report, comment);
+            client.stop();
+          } else {
+            Serial.println("Unable to connect to APRS-IS.");
+          }
+          Serial.print(report); Serial.println();
         } else {
-          Serial.print("No report. HDOP=");
-          Serial.println(hdop_value);
+          Serial.println("No report.");
         }
       } else {
-        Serial.print("Bad HDOP ");
-        Serial.println(hdop_value);
+        Serial.printf("HDOP=%0.1f GPS is not ready.\n", hdop_value);
       }
 
       if (millis() > 5000 && gps.charsProcessed() < 10) {
@@ -229,7 +239,7 @@ void loop() {
         while (true);
       }
       digitalWrite(PIN_D4, HIGH); // led off
-      smartDelay(10000);
+      smartDelay(60000);
     }
   } else if (WiFi.getMode() == WIFI_AP) { // portal mode
     dnsServer.processNextRequest();
@@ -254,6 +264,10 @@ void loop() {
   }
 }
 
+// -------------------------------------------------------------------------------
+// Support functions
+// -------------------------------------------------------------------------------
+
 // This custom version of delay() ensures that the gps object is being "fed".
 static void smartDelay(unsigned long ms)
 {
@@ -265,29 +279,27 @@ static void smartDelay(unsigned long ms)
   } while (millis() - start < ms);
 }
 
+// -------------------------------------------------------------------------------
+// APRS position with without timestamp (no APRS messaging)
+//   !lati.xxN/long.xxEvCRS/SPD/comment
+// -------------------------------------------------------------------------------
 char* positionReportWithAltitude() {
   static char report [64];
   memset (report, '\0' , sizeof(report));
-  /* --------------------------------------------------------------------------------------- *
-     APRS position with without timestamp (no APRS messaging)
-     !lati.xxN/long.xxEvCRS/SPD/comment
-     --------------------------------------------------------------------------------------- */
   if (gps.location.isValid()) {
-    sprintf(report, "%s>%s:!%07.2f%s%s%08.2f%s%s%03.0f/%03.0f/A=%06.0f",
-      mycall, APRSSOFTWARE,
-      (float)gps.location.lat() * 100, (gps.location.rawLat().negative ? "S" : "N"), symtable,
-      (float)gps.location.lng() * 100, (gps.location.rawLng().negative ? "W" : "E"), symbol,
-      (float)gps.course.deg(), (float)gps.speed.knots(), (float)gps.altitude.feet());
+    sprintf(report, "%s>%s,TCPIP*:!%02.0f%02.2f%s%s%03.0f%02.2f%s%s%03.0f/%03.0f/A=%06.0f",
+            mycall, APRSSOFTWARE,
+            (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60, (gps.location.rawLat().negative ? "S" : "N"), symtable,
+            (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60, (gps.location.rawLng().negative ? "W" : "E"), symbol,
+            (float)gps.course.deg(), (float)gps.speed.knots(), (float)gps.altitude.feet());
   } else {
     report[0] = '\0';
   }
-  return(report);
+  return (report);
 }
 
 /* ------------------------------------------------------------------------------- */
-/* Portal code begins here
-
-*/
+/* Portal code begins here                                                         */
 /* ------------------------------------------------------------------------------- */
 
 void startPortal() {

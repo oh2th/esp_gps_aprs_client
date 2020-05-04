@@ -138,9 +138,9 @@ void setup() {
     file.readBytesUntil('\n', aprshost, 255);
     file.readBytesUntil('\n', symtable, 2);
     file.readBytesUntil('\n', symbol, 2);
-    file.readBytesUntil('\n', low_speed_str, 4); low_speed = atoi(low_speed_str);
+    file.readBytesUntil('\n', low_speed_str, 4); low_speed = atoi(low_speed_str) * 0.6214; //convert kmh to mph
     file.readBytesUntil('\n', low_rate_str, 4); low_rate = atoi(low_rate_str);
-    file.readBytesUntil('\n', high_speed_str, 4); high_speed = atoi(high_speed_str);
+    file.readBytesUntil('\n', high_speed_str, 4); high_speed = atoi(high_speed_str) * 0.6214;  //convert kmh to mph
     file.readBytesUntil('\n', high_rate_str, 4); high_rate = atoi(high_rate_str);
     file.readBytesUntil('\n', turn_min_str, 4); turn_min = atoi(turn_min_str);
     file.readBytesUntil('\n', turn_slope_str, 4); turn_slope = atoi(turn_slope_str);
@@ -235,7 +235,7 @@ void loop() {
         const char* report = positionReportWithAltitude();
         if (report[0] != '\0') {
           // Position Report available, lets transmit to APRS-IS
-          cur_speed = gps.speed.kmph();
+          cur_speed = gps.speed.mph(); // SmartBeacon algorythm uses MPH
           cur_heading = gps.course.deg();
           // SmartBeacon (http://www.hamhud.net/hh2/smartbeacon.html)
           if (cur_speed < low_speed) {

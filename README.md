@@ -37,6 +37,7 @@ Use the Portal mode to configure the APRS settings:
 
 Overlay Symbols are not supported. For the SmartBeacon(TM) parameters there are a number of sites explaining the algorythm and gives some hints on good sets depending if your are walking, on the bike or driving a car. 
 
+Only valid position reports are transmitted and only when HDOP is non-zero and better than 10. (0 < HDOP < 10)
 
 ## Portal mode
 When your board is in portal mode, it blinks both onboard LEDs. Take your phone and connect to WiFi network 

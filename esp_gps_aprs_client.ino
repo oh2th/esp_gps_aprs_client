@@ -75,9 +75,16 @@ uint16_t aprsport = 14580;      // Port is fixed to TCP/14580
 //Fast Speed = Speed that I send out beacons at fast rate 100 m.p.h.
 //Fast Rate = Beacon rate at fastest interval (175s ~ 3 mins)
 //Any speed between these limits, the beacon rate is proportional.
+char low_speed_str[5], low_rate_str[5], high_speed_str[5], high_rate_str[5];
+int low_speed, low_rate, high_speed, high_rate;
 //Min Turn Time = don't beacon any faster than this interval in a turn (40sec)
 //Min Turn Angle = Minimum turn angle to consider beaconing. (20 degrees)
 //Turn Slope = Number when divided by current speed creates an angle that is added to Min Turn Angle to trigger a beacon.
+char turn_time_str[5], turn_min_str[5], turn_slope_str[5];
+int turn_time, turn_min, turn_slope;
+unsigned long lastBeaconMillis;
+int retry_now = 1;
+double prev_heading;
 
 // InfluxDB Configuration
 char measurement[32];           // measurement name for InfluxDB
@@ -131,6 +138,13 @@ void setup() {
     file.readBytesUntil('\n', aprshost, 255);
     file.readBytesUntil('\n', symtable, 2);
     file.readBytesUntil('\n', symbol, 2);
+    file.readBytesUntil('\n', low_speed_str, 4); low_speed = atoi(low_speed_str);
+    file.readBytesUntil('\n', low_rate_str, 4); low_rate = atoi(low_rate_str);
+    file.readBytesUntil('\n', high_speed_str, 4); high_speed = atoi(high_speed_str);
+    file.readBytesUntil('\n', high_rate_str, 4); high_rate = atoi(high_rate_str);
+    file.readBytesUntil('\n', turn_min_str, 4); turn_min = atoi(turn_min_str);
+    file.readBytesUntil('\n', turn_slope_str, 4); turn_slope = atoi(turn_slope_str);
+    file.readBytesUntil('\n', turn_time_str, 4); turn_time = atoi(turn_time_str);
     file.close();
   }
   Serial.printf("APRS: %s %s to %s\n", mycall, aprspass, aprshost);
@@ -176,6 +190,10 @@ void setup() {
 }
 
 void loop() {
+  double cur_speed, cur_heading;
+  int beacon_rate, turn_threshold;
+  unsigned long currentMillis = millis(), secs_since_beacon = (currentMillis - lastBeaconMillis) / 1000;
+
   // Normal running mode, connect to wifi, decode GPS and send APRS packets.
   if (WiFi.getMode() == WIFI_STA) {
 
@@ -217,21 +235,46 @@ void loop() {
         const char* report = positionReportWithAltitude();
         if (report[0] != '\0') {
           // Position Report available, lets transmit to APRS-IS
-          if(client.connect(aprshost, aprsport)) {
-            Serial.printf("HDOP=%0.1f and connected to %s:%u\n", hdop_value, aprshost, aprsport);
-            client.printf("user %s pass %s\r\n", mycall, aprspass);
-            delay(100);
-            client.printf("%s%s\r\n", report, comment);
-            client.stop();
-          } else {
-            Serial.println("Unable to connect to APRS-IS.");
+          cur_speed = gps.speed.kmph();
+          cur_heading = gps.course.deg();
+          // SmartBeacon check
+          if (cur_speed < low_speed) {
+            beacon_rate = low_rate;                             // Stopped - slow rate beacon
+          } else {                                              // We are moving - varies with speed
+            if (cur_speed > high_speed) {
+              beacon_rate = high_rate;                          // Fast speed = fast rate beacon
+            } else {
+              beacon_rate = high_rate * high_speed / cur_speed; // Intermediate beacon rate
+            }                                                   // Corner pegging - if not stopped
+            turn_threshold = turn_min + turn_slope / cur_speed; // turn threshold speed-dependent
+            if ((prev_heading - cur_heading > turn_threshold) && (secs_since_beacon > turn_time)) {
+              secs_since_beacon = beacon_rate;                  // transmit beacon now
+              prev_heading = cur_heading;
+            }
           }
-          Serial.print(report); Serial.println();
+          // Send beacon if SmartBeacon interval (beacon_rate) is reached
+          Serial.printf("Seconds since last beacon %lu and beacon_rate is %i. Retry = %i\n", secs_since_beacon, beacon_rate, retry_now);
+          if (secs_since_beacon > beacon_rate || retry_now == 1) {
+            lastBeaconMillis = currentMillis;
+            if (client.connect(aprshost, aprsport)) {
+              Serial.printf("HDOP=%0.1f and connected to %s:%u\n", hdop_value, aprshost, aprsport);
+              client.printf("user %s pass %s\r\n", mycall, aprspass);
+              delay(100);
+              client.printf("%s%s\r\n", report, comment);
+              client.stop();
+              Serial.printf("OK: %s\n", report);
+              retry_now = 0;
+            } else {
+              Serial.println("Unable to connect to APRS-IS.");
+            }
+          }
         } else {
           Serial.println("No report.");
+          retry_now = 1;
         }
       } else {
         Serial.printf("HDOP=%0.1f GPS is not ready.\n", hdop_value);
+        retry_now = 1;
       }
 
       if (millis() > 5000 && gps.charsProcessed() < 10) {
@@ -239,7 +282,7 @@ void loop() {
         while (true);
       }
       digitalWrite(PIN_D4, HIGH); // led off
-      smartDelay(60000);
+      smartDelay(5000);
     }
   } else if (WiFi.getMode() == WIFI_AP) { // portal mode
     dnsServer.processNextRequest();
@@ -292,8 +335,6 @@ char* positionReportWithAltitude() {
             (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60, (gps.location.rawLat().negative ? "S" : "N"), symtable,
             (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60, (gps.location.rawLng().negative ? "W" : "E"), symbol,
             (float)gps.course.deg(), (float)gps.speed.knots(), (float)gps.altitude.feet());
-  } else {
-    report[0] = '\0';
   }
   return (report);
 }
@@ -437,6 +478,13 @@ void httpAPRS() {
   html.replace("###APRSHOST###", String(aprshost));
   html.replace("###SYMBTABLE###", String(symtable));
   html.replace("###SYMBOL###", String(symbol));
+  html.replace("###LOWSPEED###", String(low_speed));
+  html.replace("###LOWRATE###", String(low_rate));
+  html.replace("###HIGHSPEED###", String(high_speed));
+  html.replace("###HIGHRATE###", String(high_rate));
+  html.replace("###TURNMIN###", String(turn_min));
+  html.replace("###TURNSLOPE###", String(turn_slope));
+  html.replace("###TURNTIME###", String(turn_time));
 
   server.send(200, "text/html; charset=UTF-8", html);
 }
@@ -453,34 +501,13 @@ void httpSaveAPRS() {
   file.println(server.arg("aprspass"));
   file.println(server.arg("symtable"));
   file.println(server.arg("symbol"));
-  file.close();
-
-  // reread
-  file = SPIFFS.open("/aprs.txt", "r");
-  file.readBytesUntil('\n', mycall, 32);
-  if (mycall[strlen(mycall) - 1] == 13) {
-    mycall[strlen(mycall) - 1] = 0;
-  }
-  file.readBytesUntil('\n', aprspass, 7);
-  if (aprspass[strlen(aprspass) - 1] == 13) {
-    aprspass[strlen(aprspass) - 1] = 0;
-  }
-  file.readBytesUntil('\n', comment, 32);
-  if (comment[strlen(comment) - 1] == 13) {
-    comment[strlen(comment) - 1] = 0;
-  }
-  file.readBytesUntil('\n', aprshost, 255);
-  if (aprshost[strlen(aprshost) - 1] == 13) {
-    aprshost[strlen(aprshost) - 1] = 0;
-  }
-  file.readBytesUntil('\n', symtable, 1);
-  if (symtable[strlen(symtable) - 1] == 13) {
-    symtable[strlen(symtable) - 1] = 0;
-  }
-  file.readBytesUntil('\n', symbol, 1);
-  if (symbol[strlen(symbol) - 1] == 13) {
-    symbol[strlen(symbol) - 1] = 0;
-  }
+  file.println(server.arg("low_speed"));
+  file.println(server.arg("low_rate"));
+  file.println(server.arg("high_speed"));
+  file.println(server.arg("high_rate"));
+  file.println(server.arg("turn_min"));
+  file.println(server.arg("turn_slope"));
+  file.println(server.arg("turn_time"));
   file.close();
 
   file = SPIFFS.open("/ok.html", "r");

@@ -29,6 +29,17 @@ input[type=text] {
    width: 90%;
 }
 
+select {
+   color: black;
+   background: lightyellow;
+   font-size: 24px;
+   margin-top: 10px;
+   border: 1px solid black;
+   border-radius: 5px;
+   padding: 5px;
+   width: 90%;
+}
+
 input[type=submit] {
    display: inline-block;
    position: relative;

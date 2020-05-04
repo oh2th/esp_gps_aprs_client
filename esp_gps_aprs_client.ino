@@ -237,7 +237,7 @@ void loop() {
           // Position Report available, lets transmit to APRS-IS
           cur_speed = gps.speed.kmph();
           cur_heading = gps.course.deg();
-          // SmartBeacon check
+          // SmartBeacon (http://www.hamhud.net/hh2/smartbeacon.html)
           if (cur_speed < low_speed) {
             beacon_rate = low_rate;                             // Stopped - slow rate beacon
           } else {                                              // We are moving - varies with speed
@@ -263,10 +263,10 @@ void loop() {
               client.printf("%s%s\r\n", report, comment);
               client.stop();
               Serial.printf("OK: %s\n", report);
-              retry_now = 0;
             } else {
               Serial.println("Unable to connect to APRS-IS.");
             }
+            retry_now = 0;
           }
         } else {
           Serial.println("No report.");

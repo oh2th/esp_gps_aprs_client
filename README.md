@@ -33,8 +33,10 @@ Use the Portal mode to configure the APRS settings:
 - APRS-IS Server Hostname, use one of the rotated names for redundancy and balance on the hosts
 - APRS Symbol Table (/ - Primary table, \ - Secondary table)
 - APRS Symbol (the ASCII character for the symbol you want)
+- [SmartBeacon(TM)](http://www.hamhud.net/hh2/smartbeacon.html) parameters
 
-Overlay Symbols are not supported.
+Overlay Symbols are not supported. For the SmartBeacon(TM) parameters there are a number of sites explaining the algorythm and gives some hints on good sets depending if your are walking, on the bike or driving a car. 
+
 
 ## Portal mode
 When your board is in portal mode, it blinks both onboard LEDs. Take your phone and connect to WiFi network 
@@ -46,6 +48,8 @@ The web GUI should be self explanatory.
 
 There's almost no sanity checks for the data sent from the forms. This is not a public web service and if you
 want to mess up your board or make a denial of service to it using eg. buffer overflows, feel free to do so.
+
+Credits for the configuration portal mode goes to [Mikko](https://github.com/oh2mp/).
 
 ### Sample screenshots from the portal
 ![screenshot](s/screenshot.jpg)

@@ -48,7 +48,7 @@
 #define APREQUEST PIN_D1
 #define APTIMEOUT 180000
 
-#define APRSSOFTWARE "APZESP"
+#define APRSSOFTWARE "APESPG"
 
 // Use Serial port on TXD2/RXD2
 static const int RXPin = PIN_D7, TXPin = PIN_D8;
@@ -265,6 +265,8 @@ void loop() {
               Serial.printf("OK: %s\n", report);
             } else {
               Serial.println("Unable to connect to APRS-IS.");
+              Serial.printf("HDOP=%0.1f but failed to connect to %s:%u as %s %s\n", hdop_value, aprshost, aprsport, mycall, aprspass);
+              Serial.printf("FAIL: %s\n", report);
             }
             retry_now = 0;
           }

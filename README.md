@@ -31,11 +31,10 @@ Use the Portal mode to configure the APRS settings:
 - APRS passcode
 - Comment text to send with beacon
 - APRS-IS Server Hostname, use one of the rotated names for redundancy and balance on the hosts
-- APRS Symbol Table (/ - Primary table, \ - Secondary table)
-- APRS Symbol (the ASCII character for the symbol you want)
+- APRS Symbol, reference the APRS symbols table for the two character string
 - [SmartBeacon(TM)](http://www.hamhud.net/hh2/smartbeacon.html) parameters
 
-Overlay Symbols are not supported. For the SmartBeacon(TM) parameters there are a number of sites explaining the algorythm and gives some hints on good sets depending if your are walking, on the bike or driving a car. 
+For the SmartBeacon(TM) parameters there are a number of sites explaining the algorythm and gives some hints on good sets depending if your are walking, on the bike or driving a car. 
 
 Only valid position reports are transmitted and only when HDOP is non-zero and better than 10. (0 < HDOP < 10)
 

@@ -48,7 +48,7 @@
 #define APREQUEST PIN_D1
 #define APTIMEOUT 180000
 
-#define APRSSOFTWARE "APE2TH"
+#define APRSSOFTWARE "APZESP"
 
 // Use Serial port on TXD2/RXD2
 static const int RXPin = PIN_D7, TXPin = PIN_D8;
@@ -65,8 +65,7 @@ char mycall[10];                // Radioamateur callsign
 char aprspass[8];               // APRS-IS aprspass for callsign
 char comment[32];               // Comment string added to position
 char aprshost[255];             // APRS-IS host
-char symtable[2];               // APRS Symbol table
-char symbol[2];                 // APRS Symbol
+char symbol_str[8];             // APRS Symbol
 uint16_t aprsport = 14580;      // Port is fixed to TCP/14580
 
 // APRS SmartBeacon configuration
@@ -75,12 +74,12 @@ uint16_t aprsport = 14580;      // Port is fixed to TCP/14580
 //Fast Speed = Speed that I send out beacons at fast rate 100 m.p.h.
 //Fast Rate = Beacon rate at fastest interval (175s ~ 3 mins)
 //Any speed between these limits, the beacon rate is proportional.
-char low_speed_str[5], low_rate_str[5], high_speed_str[5], high_rate_str[5];
+char low_speed_str[8], low_rate_str[8], high_speed_str[8], high_rate_str[8];
 int low_speed, low_rate, high_speed, high_rate;
 //Min Turn Time = don't beacon any faster than this interval in a turn (40sec)
 //Min Turn Angle = Minimum turn angle to consider beaconing. (20 degrees)
 //Turn Slope = Number when divided by current speed creates an angle that is added to Min Turn Angle to trigger a beacon.
-char turn_time_str[5], turn_min_str[5], turn_slope_str[5];
+char turn_time_str[8], turn_min_str[8], turn_slope_str[8];
 int turn_time, turn_min, turn_slope;
 unsigned long lastBeaconMillis;
 int retry_now = 1;
@@ -136,19 +135,20 @@ void setup() {
     file.readBytesUntil('\n', aprspass, 7);
     file.readBytesUntil('\n', comment, 32);
     file.readBytesUntil('\n', aprshost, 255);
-    file.readBytesUntil('\n', symtable, 2);
-    file.readBytesUntil('\n', symbol, 2);
-    file.readBytesUntil('\n', low_speed_str, 4); low_speed = atoi(low_speed_str) * 0.6214; //convert kmh to mph
-    file.readBytesUntil('\n', low_rate_str, 4); low_rate = atoi(low_rate_str);
-    file.readBytesUntil('\n', high_speed_str, 4); high_speed = atoi(high_speed_str) * 0.6214;  //convert kmh to mph
-    file.readBytesUntil('\n', high_rate_str, 4); high_rate = atoi(high_rate_str);
-    file.readBytesUntil('\n', turn_min_str, 4); turn_min = atoi(turn_min_str);
-    file.readBytesUntil('\n', turn_slope_str, 4); turn_slope = atoi(turn_slope_str);
-    file.readBytesUntil('\n', turn_time_str, 4); turn_time = atoi(turn_time_str);
+    file.readBytesUntil('\n', symbol_str, 8);
+    file.readBytesUntil('\n', low_speed_str, 8); low_speed = atoi(low_speed_str);
+    file.readBytesUntil('\n', low_rate_str, 8); low_rate = atoi(low_rate_str);
+    file.readBytesUntil('\n', high_speed_str, 8); high_speed = atoi(high_speed_str);
+    file.readBytesUntil('\n', high_rate_str, 8); high_rate = atoi(high_rate_str);
+    file.readBytesUntil('\n', turn_min_str, 8); turn_min = atoi(turn_min_str);
+    file.readBytesUntil('\n', turn_slope_str, 8); turn_slope = atoi(turn_slope_str);
+    file.readBytesUntil('\n', turn_time_str, 8); turn_time = atoi(turn_time_str);
     file.close();
   }
-  Serial.printf("APRS: %s %s to %s\n", mycall, aprspass, aprshost);
+  Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
   Serial.printf("APRS comment: %s\n", comment);
+  //Serial.printf("Low speed %s, Low rate %s, High speed %s, High rate %s, Turn min %s, Turn slope %s, Turn time %s\n", low_speed_str, low_rate_str, high_speed_str, high_rate_str, turn_min_str, turn_slope_str, turn_time_str);
+  Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
 
   int len;
   if (SPIFFS.exists("/last_wifi.txt")) {
@@ -235,7 +235,7 @@ void loop() {
         const char* report = positionReportWithAltitude();
         if (report[0] != '\0') {
           // Position Report available, lets transmit to APRS-IS
-          cur_speed = gps.speed.mph(); // SmartBeacon algorythm uses MPH
+          cur_speed = gps.speed.kmph();
           cur_heading = gps.course.deg();
           // SmartBeacon (http://www.hamhud.net/hh2/smartbeacon.html)
           if (cur_speed < low_speed) {
@@ -329,11 +329,13 @@ static void smartDelay(unsigned long ms)
 char* positionReportWithAltitude() {
   static char report [64];
   memset (report, '\0' , sizeof(report));
+  String symbolStr = String(symbol_str);
+
   if (gps.location.isValid()) {
-    sprintf(report, "%s>%s,TCPIP*:!%02.0f%02.2f%s%s%03.0f%02.2f%s%s%03.0f/%03.0f/A=%06.0f",
+    sprintf(report, "%s>%s,TCPIP*:!%02.0f%02.2f%s%c%03.0f%02.2f%s%c%03.0f/%03.0f/A=%06.0f",
             mycall, APRSSOFTWARE,
-            (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60, (gps.location.rawLat().negative ? "S" : "N"), symtable,
-            (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60, (gps.location.rawLng().negative ? "W" : "E"), symbol,
+            (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60, (gps.location.rawLat().negative ? "S" : "N"), symbol_str[0],
+            (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60, (gps.location.rawLng().negative ? "W" : "E"), symbol_str[1],
             (float)gps.course.deg(), (float)gps.speed.knots(), (float)gps.altitude.feet());
   }
   return (report);
@@ -467,6 +469,7 @@ void httpSaveWifi() {
 void httpAPRS() {
   portal_timer = millis();
   String html;
+  String symtab;
 
   file = SPIFFS.open("/aprs.html", "r");
   html = file.readString();
@@ -476,8 +479,7 @@ void httpAPRS() {
   html.replace("###APRSPASS###", String(aprspass));
   html.replace("###COMMENT###", String(comment));
   html.replace("###APRSHOST###", String(aprshost));
-  html.replace("###SYMBTABLE###", String(symtable));
-  html.replace("###SYMBOL###", String(symbol));
+  html.replace("###SYMBOL###", String(symbol_str));
   html.replace("###LOWSPEED###", String(low_speed));
   html.replace("###LOWRATE###", String(low_rate));
   html.replace("###HIGHSPEED###", String(high_speed));
@@ -496,10 +498,9 @@ void httpSaveAPRS() {
 
   file = SPIFFS.open("/aprs.txt", "w");
   file.println(server.arg("mycall"));
+  file.println(server.arg("aprspass"));
   file.println(server.arg("comment"));
   file.println(server.arg("aprshost"));
-  file.println(server.arg("aprspass"));
-  file.println(server.arg("symtable"));
   file.println(server.arg("symbol"));
   file.println(server.arg("low_speed"));
   file.println(server.arg("low_rate"));
@@ -509,6 +510,40 @@ void httpSaveAPRS() {
   file.println(server.arg("turn_slope"));
   file.println(server.arg("turn_time"));
   file.close();
+
+  Serial.println(server.arg("mycall"));
+  Serial.println(server.arg("aprspass"));
+  Serial.println(server.arg("comment"));
+  Serial.println(server.arg("aprshost"));
+  Serial.println(server.arg("symbol"));
+  Serial.println(server.arg("low_speed"));
+  Serial.println(server.arg("low_rate"));
+  Serial.println(server.arg("high_speed"));
+  Serial.println(server.arg("high_rate"));
+  Serial.println(server.arg("turn_min"));
+  Serial.println(server.arg("turn_slope"));
+  Serial.println(server.arg("turn_time"));
+
+  // reread
+  file = SPIFFS.open("/aprs.txt", "r");
+  file.readBytesUntil('\n', mycall, 10);        if (mycall[strlen(mycall) - 1] == 13) { mycall[strlen(mycall) - 1] = 0; }
+  file.readBytesUntil('\n', aprspass, 7);       if (aprspass[strlen(aprspass) - 1] == 13) { aprspass[strlen(aprspass) - 1] = 0; }
+  file.readBytesUntil('\n', comment, 32);       if (comment[strlen(comment) - 1] == 13) { comment[strlen(comment) - 1] = 0; }
+  file.readBytesUntil('\n', aprshost, 255);     if (aprshost[strlen(aprshost) - 1] == 13) { aprshost[strlen(aprshost) - 1] = 0; }
+  file.readBytesUntil('\n', symbol_str, 8);     if (symbol_str[strlen(symbol_str) - 1] == 13) { symbol_str[strlen(symbol_str) - 1] = 0; }
+  file.readBytesUntil('\n', low_speed_str, 8);  if (low_speed_str[strlen(low_speed_str) - 1] == 13) { low_speed_str[strlen(low_speed_str) - 1] = 0; }
+  file.readBytesUntil('\n', low_rate_str, 8);   if (low_rate_str[strlen(low_rate_str) - 1] == 13) { low_rate_str[strlen(low_rate_str) - 1] = 0; }
+  file.readBytesUntil('\n', high_speed_str, 8); if (high_speed_str[strlen(high_speed_str) - 1] == 13) { high_speed_str[strlen(high_speed_str) - 1] = 0; }
+  file.readBytesUntil('\n', high_rate_str, 8);  if (high_rate_str[strlen(high_rate_str) - 1] == 13) { high_rate_str[strlen(high_rate_str) - 1] = 0; }
+  file.readBytesUntil('\n', turn_min_str, 8);   if (turn_min_str[strlen(turn_min_str) - 1] == 13) { turn_min_str[strlen(turn_min_str) - 1] = 0; }
+  file.readBytesUntil('\n', turn_slope_str, 8); if (turn_slope_str[strlen(turn_slope_str) - 1] == 13) { turn_slope_str[strlen(turn_slope_str) - 1] = 0; }
+  file.readBytesUntil('\n', turn_time_str, 8);  if (turn_time_str[strlen(turn_time_str) - 1] == 13) { turn_time_str[strlen(turn_time_str) - 1] = 0; }
+  file.close();
+
+  Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
+  Serial.printf("APRS comment: %s\n", comment);
+  //Serial.printf("Low speed %s, Low rate %s, High speed %s, High rate %s, Turn min %s, Turn slope %s, Turn time %s\n", low_speed_str, low_rate_str, high_speed_str, high_rate_str, turn_min_str, turn_slope_str, turn_time_str);
+  Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
 
   file = SPIFFS.open("/ok.html", "r");
   html = file.readString();

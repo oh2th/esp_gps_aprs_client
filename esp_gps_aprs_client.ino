@@ -526,27 +526,6 @@ void httpSaveAPRS() {
   Serial.println(server.arg("turn_slope"));
   Serial.println(server.arg("turn_time"));
 
-  // reread
-  file = SPIFFS.open("/aprs.txt", "r");
-  file.readBytesUntil('\n', mycall, 10);        if (mycall[strlen(mycall) - 1] == 13) { mycall[strlen(mycall) - 1] = 0; }
-  file.readBytesUntil('\n', aprspass, 7);       if (aprspass[strlen(aprspass) - 1] == 13) { aprspass[strlen(aprspass) - 1] = 0; }
-  file.readBytesUntil('\n', comment, 32);       if (comment[strlen(comment) - 1] == 13) { comment[strlen(comment) - 1] = 0; }
-  file.readBytesUntil('\n', aprshost, 255);     if (aprshost[strlen(aprshost) - 1] == 13) { aprshost[strlen(aprshost) - 1] = 0; }
-  file.readBytesUntil('\n', symbol_str, 8);     if (symbol_str[strlen(symbol_str) - 1] == 13) { symbol_str[strlen(symbol_str) - 1] = 0; }
-  file.readBytesUntil('\n', low_speed_str, 8);  if (low_speed_str[strlen(low_speed_str) - 1] == 13) { low_speed_str[strlen(low_speed_str) - 1] = 0; }
-  file.readBytesUntil('\n', low_rate_str, 8);   if (low_rate_str[strlen(low_rate_str) - 1] == 13) { low_rate_str[strlen(low_rate_str) - 1] = 0; }
-  file.readBytesUntil('\n', high_speed_str, 8); if (high_speed_str[strlen(high_speed_str) - 1] == 13) { high_speed_str[strlen(high_speed_str) - 1] = 0; }
-  file.readBytesUntil('\n', high_rate_str, 8);  if (high_rate_str[strlen(high_rate_str) - 1] == 13) { high_rate_str[strlen(high_rate_str) - 1] = 0; }
-  file.readBytesUntil('\n', turn_min_str, 8);   if (turn_min_str[strlen(turn_min_str) - 1] == 13) { turn_min_str[strlen(turn_min_str) - 1] = 0; }
-  file.readBytesUntil('\n', turn_slope_str, 8); if (turn_slope_str[strlen(turn_slope_str) - 1] == 13) { turn_slope_str[strlen(turn_slope_str) - 1] = 0; }
-  file.readBytesUntil('\n', turn_time_str, 8);  if (turn_time_str[strlen(turn_time_str) - 1] == 13) { turn_time_str[strlen(turn_time_str) - 1] = 0; }
-  file.close();
-
-  Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
-  Serial.printf("APRS comment: %s\n", comment);
-  //Serial.printf("Low speed %s, Low rate %s, High speed %s, High rate %s, Turn min %s, Turn slope %s, Turn time %s\n", low_speed_str, low_rate_str, high_speed_str, high_rate_str, turn_min_str, turn_slope_str, turn_time_str);
-  Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
-
   file = SPIFFS.open("/ok.html", "r");
   html = file.readString();
   file.close();

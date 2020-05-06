@@ -132,17 +132,48 @@ void setup() {
   if (SPIFFS.exists("/aprs.txt")) {
     file = SPIFFS.open("/aprs.txt", "r");
     file.readBytesUntil('\n', mycall, 10);
+    if (mycall[strlen(mycall)-1] == 13) {mycall[strlen(mycall)-1] = 0;}
+    
     file.readBytesUntil('\n', aprspass, 7);
+    if (aprspass[strlen(aprspass)-1] == 13) {aprspass[strlen(aprspass)-1] = 0;}
+    
     file.readBytesUntil('\n', comment, 32);
+    if (comment[strlen(comment)-1] == 13) {comment[strlen(comment)-1] = 0;}
+    
     file.readBytesUntil('\n', aprshost, 255);
+    if (aprshost[strlen(aprshost)-1] == 13) {aprshost[strlen(aprshost)-1] = 0;}
+    
     file.readBytesUntil('\n', symbol_str, 8);
-    file.readBytesUntil('\n', low_speed_str, 8); low_speed = atoi(low_speed_str);
-    file.readBytesUntil('\n', low_rate_str, 8); low_rate = atoi(low_rate_str);
-    file.readBytesUntil('\n', high_speed_str, 8); high_speed = atoi(high_speed_str);
-    file.readBytesUntil('\n', high_rate_str, 8); high_rate = atoi(high_rate_str);
-    file.readBytesUntil('\n', turn_min_str, 8); turn_min = atoi(turn_min_str);
-    file.readBytesUntil('\n', turn_slope_str, 8); turn_slope = atoi(turn_slope_str);
-    file.readBytesUntil('\n', turn_time_str, 8); turn_time = atoi(turn_time_str);
+    if (symbol_str[strlen(symbol_str)-1] == 13) {symbol_str[strlen(symbol_str)-1] = 0;}
+    
+    file.readBytesUntil('\n', low_speed_str, 8);
+    if (low_speed_str[strlen(low_speed_str)-1] == 13) {low_speed_str[strlen(low_speed_str)-1] = 0;}
+    low_speed = atoi(low_speed_str);
+    
+    file.readBytesUntil('\n', low_rate_str, 8);
+    if (low_rate_str[strlen(low_rate_str)-1] == 13) {low_rate_str[strlen(low_rate_str)-1] = 0;}
+    low_rate = atoi(low_rate_str);
+    
+    file.readBytesUntil('\n', high_speed_str, 8);
+    if (high_speed_str[strlen(high_speed_str)-1] == 13) {high_speed_str[strlen(high_speed_str)-1] = 0;}
+    high_speed = atoi(high_speed_str);
+    
+    file.readBytesUntil('\n', high_rate_str, 8);
+    if (high_rate_str[strlen(high_rate_str)-1] == 13) {high_rate_str[strlen(high_rate_str)-1] = 0;}
+    high_rate = atoi(high_rate_str);
+    
+    file.readBytesUntil('\n', turn_min_str, 8);
+    if (turn_min_str[strlen(turn_min_str)-1] == 13) {turn_min_str[strlen(turn_min_str)-1] = 0;}
+    turn_min = atoi(turn_min_str);
+    
+    file.readBytesUntil('\n', turn_slope_str, 8);
+    if (turn_slope_str[strlen(turn_slope_str)-1] == 13) {turn_slope_str[strlen(turn_slope_str)-1] = 0;}
+    turn_slope = atoi(turn_slope_str);
+    
+    file.readBytesUntil('\n', turn_time_str, 8);
+    if (turn_time_str[strlen(turn_time_str)-1] == 13) {turn_time_str[strlen(turn_time_str)-1] = 0;}
+    turn_time = atoi(turn_time_str);
+    
     file.close();
   }
   Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
@@ -369,6 +400,7 @@ void startPortal() {
   server.on("/influx.html", httpInflux);
   server.on("/saveinfl", httpSaveInflux);
   server.on("/boot", httpBoot);
+  server.on("/dl", httpDownload);
 
   server.onNotFound([]() {
     server.sendHeader("Refresh", "1;url=/");
@@ -513,18 +545,53 @@ void httpSaveAPRS() {
   file.println(server.arg("turn_time"));
   file.close();
 
-  Serial.println(server.arg("mycall"));
-  Serial.println(server.arg("aprspass"));
-  Serial.println(server.arg("comment"));
-  Serial.println(server.arg("aprshost"));
-  Serial.println(server.arg("symbol"));
-  Serial.println(server.arg("low_speed"));
-  Serial.println(server.arg("low_rate"));
-  Serial.println(server.arg("high_speed"));
-  Serial.println(server.arg("high_rate"));
-  Serial.println(server.arg("turn_min"));
-  Serial.println(server.arg("turn_slope"));
-  Serial.println(server.arg("turn_time"));
+  if (SPIFFS.exists("/aprs.txt")) {
+    file = SPIFFS.open("/aprs.txt", "r");
+    file.readBytesUntil('\n', mycall, 10);
+    if (mycall[strlen(mycall)-1] == 13) {mycall[strlen(mycall)-1] = 0;}
+    
+    file.readBytesUntil('\n', aprspass, 7);
+    if (aprspass[strlen(aprspass)-1] == 13) {aprspass[strlen(aprspass)-1] = 0;}
+    
+    file.readBytesUntil('\n', comment, 32);
+    if (comment[strlen(comment)-1] == 13) {comment[strlen(comment)-1] = 0;}
+    
+    file.readBytesUntil('\n', aprshost, 255);
+    if (aprshost[strlen(aprshost)-1] == 13) {aprshost[strlen(aprshost)-1] = 0;}
+    
+    file.readBytesUntil('\n', symbol_str, 8);
+    if (symbol_str[strlen(symbol_str)-1] == 13) {symbol_str[strlen(symbol_str)-1] = 0;}
+    
+    file.readBytesUntil('\n', low_speed_str, 8);
+    if (low_speed_str[strlen(low_speed_str)-1] == 13) {low_speed_str[strlen(low_speed_str)-1] = 0;}
+    low_speed = atoi(low_speed_str);
+    
+    file.readBytesUntil('\n', low_rate_str, 8);
+    if (low_rate_str[strlen(low_rate_str)-1] == 13) {low_rate_str[strlen(low_rate_str)-1] = 0;}
+    low_rate = atoi(low_rate_str);
+    
+    file.readBytesUntil('\n', high_speed_str, 8);
+    if (high_speed_str[strlen(high_speed_str)-1] == 13) {high_speed_str[strlen(high_speed_str)-1] = 0;}
+    high_speed = atoi(high_speed_str);
+    
+    file.readBytesUntil('\n', high_rate_str, 8);
+    if (high_rate_str[strlen(high_rate_str)-1] == 13) {high_rate_str[strlen(high_rate_str)-1] = 0;}
+    high_rate = atoi(high_rate_str);
+    
+    file.readBytesUntil('\n', turn_min_str, 8);
+    if (turn_min_str[strlen(turn_min_str)-1] == 13) {turn_min_str[strlen(turn_min_str)-1] = 0;}
+    turn_min = atoi(turn_min_str);
+    
+    file.readBytesUntil('\n', turn_slope_str, 8);
+    if (turn_slope_str[strlen(turn_slope_str)-1] == 13) {turn_slope_str[strlen(turn_slope_str)-1] = 0;}
+    turn_slope = atoi(turn_slope_str);
+    
+    file.readBytesUntil('\n', turn_time_str, 8);
+    if (turn_time_str[strlen(turn_time_str)-1] == 13) {turn_time_str[strlen(turn_time_str)-1] = 0;}
+    turn_time = atoi(turn_time_str);
+    
+    file.close();
+  }
 
   file = SPIFFS.open("/ok.html", "r");
   html = file.readString();
@@ -615,5 +682,27 @@ void httpBoot() {
   server.send(200, "text/html; charset=UTF-8", html);
   delay(1000);
   ESP.restart();
+}
+/* ------------------------------------------------------------------------------- */
+
+void httpDownload(){
+    String str = "";
+    file = SPIFFS.open(server.arg(0), "r");
+    if (!file) {
+      Serial.println("Can't open SPIFFS file !\r\n");         
+    }
+    else {
+      char buf[1024];
+      int siz = file.size();
+      while(siz > 0) {
+        size_t len = std::min((int)(sizeof(buf) - 1), siz);
+        file.read((uint8_t *)buf, len);
+        buf[len] = 0;
+        str += buf;
+        siz -= sizeof(buf) - 1;
+      }
+      file.close();
+      server.send(200, "text/plain", str);
+    }
 }
 /* ------------------------------------------------------------------------------- */

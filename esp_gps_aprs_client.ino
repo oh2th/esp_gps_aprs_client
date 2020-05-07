@@ -1,5 +1,5 @@
 /*
-   ESP GPS APRS-IS Client with SmartBeacon
+   ESP SmartBeacon APRS-IS Client
 
    See https://github.com/oh2th/esp_gps_aprs_client
 */
@@ -83,7 +83,7 @@ char turn_time_str[8], turn_min_str[8], turn_slope_str[8];
 int turn_time, turn_min, turn_slope;
 unsigned long lastBeaconMillis;
 int retry_now = 1;
-double prev_heading;
+int prev_heading;
 
 // InfluxDB Configuration
 char measurement[32];           // measurement name for InfluxDB
@@ -124,62 +124,12 @@ void setup() {
 
   Serial.begin(115200);
   ss.begin(GPSBaud);
-  Serial.println(F("ESP GPS APRS-IS Client with SmartBeacon by OH2TH."));
+  Serial.println(F("ESP SmartBeacon APRS-IS Client by OH2TH."));
   Serial.print(F("Using TinyGPS++ library v. ")); Serial.println(TinyGPSPlus::libraryVersion());
 
   SPIFFS.begin();
 
-  if (SPIFFS.exists("/aprs.txt")) {
-    file = SPIFFS.open("/aprs.txt", "r");
-    file.readBytesUntil('\n', mycall, 10);
-    if (mycall[strlen(mycall)-1] == 13) {mycall[strlen(mycall)-1] = 0;}
-    
-    file.readBytesUntil('\n', aprspass, 7);
-    if (aprspass[strlen(aprspass)-1] == 13) {aprspass[strlen(aprspass)-1] = 0;}
-    
-    file.readBytesUntil('\n', comment, 32);
-    if (comment[strlen(comment)-1] == 13) {comment[strlen(comment)-1] = 0;}
-    
-    file.readBytesUntil('\n', aprshost, 255);
-    if (aprshost[strlen(aprshost)-1] == 13) {aprshost[strlen(aprshost)-1] = 0;}
-    
-    file.readBytesUntil('\n', symbol_str, 8);
-    if (symbol_str[strlen(symbol_str)-1] == 13) {symbol_str[strlen(symbol_str)-1] = 0;}
-    
-    file.readBytesUntil('\n', low_speed_str, 8);
-    if (low_speed_str[strlen(low_speed_str)-1] == 13) {low_speed_str[strlen(low_speed_str)-1] = 0;}
-    low_speed = atoi(low_speed_str);
-    
-    file.readBytesUntil('\n', low_rate_str, 8);
-    if (low_rate_str[strlen(low_rate_str)-1] == 13) {low_rate_str[strlen(low_rate_str)-1] = 0;}
-    low_rate = atoi(low_rate_str);
-    
-    file.readBytesUntil('\n', high_speed_str, 8);
-    if (high_speed_str[strlen(high_speed_str)-1] == 13) {high_speed_str[strlen(high_speed_str)-1] = 0;}
-    high_speed = atoi(high_speed_str);
-    
-    file.readBytesUntil('\n', high_rate_str, 8);
-    if (high_rate_str[strlen(high_rate_str)-1] == 13) {high_rate_str[strlen(high_rate_str)-1] = 0;}
-    high_rate = atoi(high_rate_str);
-    
-    file.readBytesUntil('\n', turn_min_str, 8);
-    if (turn_min_str[strlen(turn_min_str)-1] == 13) {turn_min_str[strlen(turn_min_str)-1] = 0;}
-    turn_min = atoi(turn_min_str);
-    
-    file.readBytesUntil('\n', turn_slope_str, 8);
-    if (turn_slope_str[strlen(turn_slope_str)-1] == 13) {turn_slope_str[strlen(turn_slope_str)-1] = 0;}
-    turn_slope = atoi(turn_slope_str);
-    
-    file.readBytesUntil('\n', turn_time_str, 8);
-    if (turn_time_str[strlen(turn_time_str)-1] == 13) {turn_time_str[strlen(turn_time_str)-1] = 0;}
-    turn_time = atoi(turn_time_str);
-    
-    file.close();
-  }
-  Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
-  Serial.printf("APRS comment: %s\n", comment);
-  //Serial.printf("Low speed %s, Low rate %s, High speed %s, High rate %s, Turn min %s, Turn slope %s, Turn time %s\n", low_speed_str, low_rate_str, high_speed_str, high_rate_str, turn_min_str, turn_slope_str, turn_time_str);
-  Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
+  readCfgAPRS();
 
   int len;
   if (SPIFFS.exists("/last_wifi.txt")) {
@@ -221,8 +171,8 @@ void setup() {
 }
 
 void loop() {
-  double cur_speed, cur_heading;
-  int beacon_rate, turn_threshold;
+  double cur_speed;
+  int cur_heading, beacon_rate, turn_threshold;
   unsigned long currentMillis = millis(), secs_since_beacon = (currentMillis - lastBeaconMillis) / 1000;
 
   // Normal running mode, connect to wifi, decode GPS and send APRS packets.
@@ -268,19 +218,24 @@ void loop() {
           // Position Report available, lets transmit to APRS-IS
           cur_speed = gps.speed.kmph();
           cur_heading = gps.course.deg();
+          //
           // SmartBeacon (http://www.hamhud.net/hh2/smartbeacon.html)
+          //
+          // Stopped - slow rate beacon
           if (cur_speed < low_speed) {
-            beacon_rate = low_rate;                             // Stopped - slow rate beacon
-          } else {                                              // We are moving - varies with speed
+            beacon_rate = low_rate;
+          } else {
+            // Adjust beacon rate according to speed
             if (cur_speed > high_speed) {
-              beacon_rate = high_rate;                          // Fast speed = fast rate beacon
+              beacon_rate = high_rate;
             } else {
-              beacon_rate = high_rate * high_speed / cur_speed; // Intermediate beacon rate
-            }                                                   // Corner pegging - if not stopped
-            turn_threshold = turn_min + turn_slope / cur_speed; // turn threshold speed-dependent
-            if ((prev_heading - cur_heading > turn_threshold) && (secs_since_beacon > turn_time)) {
+              beacon_rate = high_rate * high_speed / cur_speed;
+            }                                                   
+            // Corner pegging - ALWAYS occurs if not "stopped"
+            // - turn threshold is speed-dependent
+            turn_threshold = turn_min + turn_slope / cur_speed;
+            if ((((prev_heading - cur_heading + 360) % 360) > turn_threshold) && (secs_since_beacon > turn_time)) {
               secs_since_beacon = beacon_rate;                  // transmit beacon now
-              prev_heading = cur_heading;
             }
           }
           // Send beacon if SmartBeacon interval (beacon_rate) is reached
@@ -294,6 +249,7 @@ void loop() {
               client.printf("%s%s\r\n", report, comment);
               client.stop();
               Serial.printf("OK: %s\n", report);
+              prev_heading = cur_heading;
             } else {
               Serial.println("Unable to connect to APRS-IS.");
               Serial.printf("HDOP=%0.1f but failed to connect to %s:%u as %s %s\n", hdop_value, aprshost, aprsport, mycall, aprspass);
@@ -353,6 +309,62 @@ static void smartDelay(unsigned long ms)
     while (ss.available())
       gps.encode(ss.read());
   } while (millis() - start < ms);
+}
+
+// Function to read APRS configuration from file.
+static void readCfgAPRS()
+{
+  if (SPIFFS.exists("/aprs.txt")) {
+    file = SPIFFS.open("/aprs.txt", "r");
+    file.readBytesUntil('\n', mycall, 10);
+    if (mycall[strlen(mycall)-1] == 13) {mycall[strlen(mycall)-1] = 0;}
+    
+    file.readBytesUntil('\n', aprspass, 7);
+    if (aprspass[strlen(aprspass)-1] == 13) {aprspass[strlen(aprspass)-1] = 0;}
+    
+    file.readBytesUntil('\n', comment, 32);
+    if (comment[strlen(comment)-1] == 13) {comment[strlen(comment)-1] = 0;}
+    
+    file.readBytesUntil('\n', aprshost, 255);
+    if (aprshost[strlen(aprshost)-1] == 13) {aprshost[strlen(aprshost)-1] = 0;}
+    
+    file.readBytesUntil('\n', symbol_str, 8);
+    if (symbol_str[strlen(symbol_str)-1] == 13) {symbol_str[strlen(symbol_str)-1] = 0;}
+    
+    file.readBytesUntil('\n', low_speed_str, 8);
+    if (low_speed_str[strlen(low_speed_str)-1] == 13) {low_speed_str[strlen(low_speed_str)-1] = 0;}
+    low_speed = atoi(low_speed_str);
+    
+    file.readBytesUntil('\n', low_rate_str, 8);
+    if (low_rate_str[strlen(low_rate_str)-1] == 13) {low_rate_str[strlen(low_rate_str)-1] = 0;}
+    low_rate = atoi(low_rate_str);
+    
+    file.readBytesUntil('\n', high_speed_str, 8);
+    if (high_speed_str[strlen(high_speed_str)-1] == 13) {high_speed_str[strlen(high_speed_str)-1] = 0;}
+    high_speed = atoi(high_speed_str);
+    
+    file.readBytesUntil('\n', high_rate_str, 8);
+    if (high_rate_str[strlen(high_rate_str)-1] == 13) {high_rate_str[strlen(high_rate_str)-1] = 0;}
+    high_rate = atoi(high_rate_str);
+    
+    file.readBytesUntil('\n', turn_min_str, 8);
+    if (turn_min_str[strlen(turn_min_str)-1] == 13) {turn_min_str[strlen(turn_min_str)-1] = 0;}
+    turn_min = atoi(turn_min_str);
+    
+    file.readBytesUntil('\n', turn_slope_str, 8);
+    if (turn_slope_str[strlen(turn_slope_str)-1] == 13) {turn_slope_str[strlen(turn_slope_str)-1] = 0;}
+    turn_slope = atoi(turn_slope_str);
+    
+    file.readBytesUntil('\n', turn_time_str, 8);
+    if (turn_time_str[strlen(turn_time_str)-1] == 13) {turn_time_str[strlen(turn_time_str)-1] = 0;}
+    turn_time = atoi(turn_time_str);
+    
+    file.close();
+  }
+  Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
+  Serial.printf("APRS comment: %s\n", comment);
+  //Serial.printf("Low speed %s, Low rate %s, High speed %s, High rate %s, Turn min %s, Turn slope %s, Turn time %s\n", low_speed_str, low_rate_str, high_speed_str, high_rate_str, turn_min_str, turn_slope_str, turn_time_str);
+  Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
 }
 
 // -------------------------------------------------------------------------------
@@ -545,53 +557,8 @@ void httpSaveAPRS() {
   file.println(server.arg("turn_time"));
   file.close();
 
-  if (SPIFFS.exists("/aprs.txt")) {
-    file = SPIFFS.open("/aprs.txt", "r");
-    file.readBytesUntil('\n', mycall, 10);
-    if (mycall[strlen(mycall)-1] == 13) {mycall[strlen(mycall)-1] = 0;}
-    
-    file.readBytesUntil('\n', aprspass, 7);
-    if (aprspass[strlen(aprspass)-1] == 13) {aprspass[strlen(aprspass)-1] = 0;}
-    
-    file.readBytesUntil('\n', comment, 32);
-    if (comment[strlen(comment)-1] == 13) {comment[strlen(comment)-1] = 0;}
-    
-    file.readBytesUntil('\n', aprshost, 255);
-    if (aprshost[strlen(aprshost)-1] == 13) {aprshost[strlen(aprshost)-1] = 0;}
-    
-    file.readBytesUntil('\n', symbol_str, 8);
-    if (symbol_str[strlen(symbol_str)-1] == 13) {symbol_str[strlen(symbol_str)-1] = 0;}
-    
-    file.readBytesUntil('\n', low_speed_str, 8);
-    if (low_speed_str[strlen(low_speed_str)-1] == 13) {low_speed_str[strlen(low_speed_str)-1] = 0;}
-    low_speed = atoi(low_speed_str);
-    
-    file.readBytesUntil('\n', low_rate_str, 8);
-    if (low_rate_str[strlen(low_rate_str)-1] == 13) {low_rate_str[strlen(low_rate_str)-1] = 0;}
-    low_rate = atoi(low_rate_str);
-    
-    file.readBytesUntil('\n', high_speed_str, 8);
-    if (high_speed_str[strlen(high_speed_str)-1] == 13) {high_speed_str[strlen(high_speed_str)-1] = 0;}
-    high_speed = atoi(high_speed_str);
-    
-    file.readBytesUntil('\n', high_rate_str, 8);
-    if (high_rate_str[strlen(high_rate_str)-1] == 13) {high_rate_str[strlen(high_rate_str)-1] = 0;}
-    high_rate = atoi(high_rate_str);
-    
-    file.readBytesUntil('\n', turn_min_str, 8);
-    if (turn_min_str[strlen(turn_min_str)-1] == 13) {turn_min_str[strlen(turn_min_str)-1] = 0;}
-    turn_min = atoi(turn_min_str);
-    
-    file.readBytesUntil('\n', turn_slope_str, 8);
-    if (turn_slope_str[strlen(turn_slope_str)-1] == 13) {turn_slope_str[strlen(turn_slope_str)-1] = 0;}
-    turn_slope = atoi(turn_slope_str);
-    
-    file.readBytesUntil('\n', turn_time_str, 8);
-    if (turn_time_str[strlen(turn_time_str)-1] == 13) {turn_time_str[strlen(turn_time_str)-1] = 0;}
-    turn_time = atoi(turn_time_str);
-    
-    file.close();
-  }
+  // reread config from file
+  readCfgAPRS();
 
   file = SPIFFS.open("/ok.html", "r");
   html = file.readString();

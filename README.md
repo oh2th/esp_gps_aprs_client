@@ -1,5 +1,6 @@
 # esp8266 GPS APRS-IS Client with SmartBecon
 GPS receiver that can send APRS position reports to an APRS-IS server. This client has also SmartBeacon(TM) capability.
+![ESPGPS](s/ESPGPS.jpg)
 
 ## Hardware prerequisities
 - An esp8266 board

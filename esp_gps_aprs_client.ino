@@ -82,7 +82,7 @@ int low_speed, low_rate, high_speed, high_rate;
 char turn_time_str[8], turn_min_str[8], turn_slope_str[8];
 int turn_time, turn_min, turn_slope;
 unsigned long lastBeaconMillis;
-int retry_now = 1;
+int send_now = 1;
 int prev_heading;
 
 // InfluxDB Configuration
@@ -171,8 +171,7 @@ void setup() {
 }
 
 void loop() {
-  double cur_speed;
-  int cur_heading, beacon_rate, turn_threshold;
+  int cur_speed, cur_heading, beacon_rate, turn_threshold, heading_change_since_beacon=0;
   unsigned long currentMillis = millis(), secs_since_beacon = (currentMillis - lastBeaconMillis) / 1000;
 
   // Normal running mode, connect to wifi, decode GPS and send APRS packets.
@@ -221,26 +220,43 @@ void loop() {
           //
           // SmartBeacon (http://www.hamhud.net/hh2/smartbeacon.html)
           //
+          Serial.print("Beacon -> ");
           // Stopped - slow rate beacon
           if (cur_speed < low_speed) {
             beacon_rate = low_rate;
+            Serial.printf("low_spd, ");
           } else {
             // Adjust beacon rate according to speed
             if (cur_speed > high_speed) {
               beacon_rate = high_rate;
+              Serial.printf("hgh_spd, ");
             } else {
               beacon_rate = high_rate * high_speed / cur_speed;
+              if (beacon_rate > low_rate) {
+                beacon_rate = low_rate;
+              }
+              if (beacon_rate < high_rate) {
+                beacon_rate = high_rate;
+              }
+              Serial.printf("cur_spd, ");
             }                                                   
             // Corner pegging - ALWAYS occurs if not "stopped"
             // - turn threshold is speed-dependent
             turn_threshold = turn_min + turn_slope / cur_speed;
-            if ((((prev_heading - cur_heading + 360) % 360) > turn_threshold) && (secs_since_beacon > turn_time)) {
-              secs_since_beacon = beacon_rate;                  // transmit beacon now
+            if(prev_heading > cur_heading) {
+              heading_change_since_beacon = ((prev_heading - cur_heading + 360) % 360);
+            } else {
+              heading_change_since_beacon = ((cur_heading - prev_heading + 360) % 360);
+            }
+            if ((heading_change_since_beacon > turn_threshold) && (secs_since_beacon > turn_time)) {
+              send_now = 1;
+              Serial.printf("turning, ");
             }
           }
+          Serial.printf("rate=%lu/%i send=%i speed=%i heading=%i was %i changed %i\n", secs_since_beacon, beacon_rate, send_now, cur_speed, cur_heading, prev_heading, heading_change_since_beacon);
+
           // Send beacon if SmartBeacon interval (beacon_rate) is reached
-          Serial.printf("Seconds since last beacon %lu and beacon_rate is %i. Retry = %i\n", secs_since_beacon, beacon_rate, retry_now);
-          if (secs_since_beacon > beacon_rate || retry_now == 1) {
+          if (secs_since_beacon > beacon_rate || send_now == 1) {
             lastBeaconMillis = currentMillis;
             if (client.connect(aprshost, aprsport)) {
               Serial.printf("HDOP=%0.1f and connected to %s:%u\n", hdop_value, aprshost, aprsport);
@@ -255,15 +271,15 @@ void loop() {
               Serial.printf("HDOP=%0.1f but failed to connect to %s:%u as %s %s\n", hdop_value, aprshost, aprsport, mycall, aprspass);
               Serial.printf("FAIL: %s\n", report);
             }
-            retry_now = 0;
+            send_now = 0;
           }
         } else {
           Serial.println("No report.");
-          retry_now = 1;
+          send_now = 1;
         }
       } else {
         Serial.printf("HDOP=%0.1f GPS is not ready.\n", hdop_value);
-        retry_now = 1;
+        send_now = 1;
       }
 
       if (millis() > 5000 && gps.charsProcessed() < 10) {

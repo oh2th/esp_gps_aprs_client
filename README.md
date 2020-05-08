@@ -1,4 +1,4 @@
-# esp8266 GPS APRS-IS Client with SmartBecon
+# ESP SmartBeacon APRS-IS Client
 GPS receiver that can send APRS position reports to an APRS-IS server. This client has also SmartBeacon(TM) capability.
 ![ESPGPS](s/ESPGPS.jpg)
 
@@ -11,14 +11,14 @@ GPS receiver that can send APRS position reports to an APRS-IS server. This clie
 (or another software that can handle similar POST request).
 - [Arduino IDE](https://www.arduino.cc/en/main/software)
 - [Arduino ESP8266 filesystem uploader](https://github.com/esp8266/arduino-esp8266fs-plugin)
-- [TinyGPS++ library](http://arduiniana.org/libraries/tinygpsplus/)
+- Download and install [TinyGPS++ library](http://arduiniana.org/libraries/tinygpsplus/)
 
 Required libraries:
 
 ESP8266WiFi, ESP8266WiFiMulti,  ESP8266HTTPClient, WiFiClientSecure, WiFiClient, DNSServer, ESP8266WebServer, SoftwareSerial, FS
 
-Use the filesystem uploader tool to upload the contents of data library. It contains the html pages for
-the configuring portal.
+Use the filesystem uploader tool to upload the contents of data library. It contains the files for
+the configuration portal.
 
 ## Connections
 Connect your GPS receiver to pins D7 (RXD2) and D8 (TXD2). 

@@ -1,6 +1,8 @@
 # ESP SmartBeacon APRS-IS Client
 GPS receiver that can send APRS position reports to an APRS-IS server. This client has also SmartBeacon(TM) capability.
 ![ESPGPS](s/ESPGPS.jpg)
+![ESPGPS](s/20200510_174625.jpg)
+
 
 ## Hardware prerequisities
 - An esp8266 board
@@ -17,6 +19,10 @@ Required libraries:
 
 ESP8266WiFi, ESP8266WiFiMulti,  ESP8266HTTPClient, WiFiClientSecure, WiFiClient, DNSServer, ESP8266WebServer, SoftwareSerial, FS
 
+Optional libraries:
+
+Wire, Adafruit_SSD1306, Adafruit_GFX
+
 Use the filesystem uploader tool to upload the contents of data library. It contains the files for
 the configuration portal.
 
@@ -24,7 +30,13 @@ the configuration portal.
 Connect your GPS receiver to pins D7 (RXD2) and D8 (TXD2). 
 
 You can connect a switch between D1 and GND. If D1 is grounded, the esp8266 starts portal mode. The pin can be
-also changed from the code, see row `#define APREQUEST PIN_D1`
+also changed from the code, see row `#define APREQUEST PIN_D5`.
+
+Optionally you can connect an I2C OLED Display to D1 (SCL) and D2 (SDA) for live information display. 
+You should change `#define SSD1306_128_64` to `#undef SSD1306_128_64` to disable the display code. If the display is not used,
+the onboard LEDs will show the board operational status.
+- Portal mode - alternating
+- Operational - one is steady, the other one when sending to APRS-IS
 
 ## APRS configuration
 Use the Portal mode to configure the APRS settings:

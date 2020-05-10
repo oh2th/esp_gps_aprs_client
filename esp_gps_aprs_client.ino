@@ -5,9 +5,16 @@
 */
 
 #include <Arduino.h>
+// GPS
 #include <TinyGPS++.h>
 #include <SoftwareSerial.h>
 
+// Display
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_GFX.h>
+
+// NodeMCU ESP8266 Wifi
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266HTTPClient.h>
@@ -15,6 +22,8 @@
 #include <WiFiClient.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
+
+// Filesystem
 #include <FS.h>
 #include <base64.h>
 
@@ -23,18 +32,18 @@
 
 /* ------------------------------------------------------------------------------- */
 /* These are the pins for all ESP8266 boards */
-//      Name   GPIO    Function
-#define PIN_D0  16  // WAKE, Onboard LED
-#define PIN_D1   5  // User purpose
-#define PIN_D2   4  // User purpose
-#define PIN_D3   0  // Low on boot means enter FLASH mode
-#define PIN_D4   2  // TXD1 (must be high on boot to go to UART0 FLASH mode), Onboard LED
-#define PIN_D5  14  // HSCLK
+//      Name   GPIO    Function     My function
+#define PIN_D0  16  // WAKE         Onboard LED
+#define PIN_D1   5  // User purpose I2C_SCL
+#define PIN_D2   4  // User purpose I2C_SDA
+#define PIN_D3   0  //                          (Low on boot means enter FLASH mode)
+#define PIN_D4   2  // TXD1         Onboard LED (must be high on boot to go to UART0 FLASH mode)
+#define PIN_D5  14  // HSCLK        APREQUEST
 #define PIN_D6  12  // HMISO
-#define PIN_D7  13  // HMOSI  RXD2
-#define PIN_D8  15  // HCS    TXD2 (must be low on boot to enter UART0 FLASH mode)
-#define PIN_D9   3  //        RXD0
-#define PIN_D10  1  //        TXD0
+#define PIN_D7  13  // HMOSI  RXD2  GPS
+#define PIN_D8  15  // HCS    TXD2  GPS         (must be low on boot to enter UART0 FLASH mode)
+#define PIN_D9   3  //        RXD0              (Same as USB Serial)
+#define PIN_D10  1  //        TXD0              (Same as USB Serial)
 
 #define PIN_MOSI 8  // SD1
 #define PIN_MISO 7  // SD0
@@ -43,14 +52,26 @@
 
 #define PIN_D11  9  // SD2
 #define PIN_D12 10  // SD4
+
 /* ------------------------------------------------------------------------------- */
-
-#define APREQUEST PIN_D1
-#define APTIMEOUT 180000
-
 #define APRSSOFTWARE "APESPG"
 
-// Use Serial port on TXD2/RXD2
+// Configuration AP-mode when LOW
+#define APREQUEST PIN_D5
+#define APTIMEOUT 180000
+
+// SSD1306 I2C Display
+#define SSD1306_128_64  // Comment out this line to disable display code
+                        // If this display is used, onboard LEDs are off while normal operation
+#ifdef SSD1306_128_64
+  #define OLED_ADDR 0x3C
+  #define OLED_RESET -1
+  #define OLED_WIDTH 128
+  #define OLED_HEIGHT 64
+  Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+#endif //SSD1306_128_64
+
+// Use Serial port on TXD2/RXD2 for GPS
 static const int RXPin = PIN_D7, TXPin = PIN_D8;
 static const uint32_t GPSBaud = 9600;
 
@@ -104,9 +125,10 @@ unsigned long portal_timer = 0;
 
 // The TinyGPS++ object
 TinyGPSPlus gps;
+TinyGPSCustom gpsFix(gps, "GPGSA", 2); // 1= No fix, 2=2D, 3=3D
 
 // The serial connection to the GPS device
-SoftwareSerial ss(RXPin, TXPin);
+SoftwareSerial gpsSerial(RXPin, TXPin);
 
 ESP8266WiFiMulti WiFiMulti;
 ESP8266WebServer server(80);
@@ -123,9 +145,20 @@ void setup() {
   pinMode(PIN_D4, OUTPUT);
 
   Serial.begin(115200);
-  ss.begin(GPSBaud);
+  gpsSerial.begin(GPSBaud);
   Serial.println(F("ESP SmartBeacon APRS-IS Client by OH2TH."));
   Serial.print(F("Using TinyGPS++ library v. ")); Serial.println(TinyGPSPlus::libraryVersion());
+
+  #ifdef SSD1306_128_64
+    if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+      Serial.println(F("SSD1306 allocation failed"));
+      for(;;); // Don't proceed, loop forever
+    }
+    display.display();
+    delay(2000);
+    display.clearDisplay();
+    display.display();
+  #endif
 
   SPIFFS.begin();
 
@@ -203,8 +236,13 @@ void loop() {
 
     // When connected to WiFi
     if ((WiFiMulti.run() == WL_CONNECTED)) {
-      digitalWrite(PIN_D0, LOW); // led on when in connect
-      digitalWrite(PIN_D4, LOW); // interval led on as a heartbeat
+      #ifndef SSD1306_128_64 // Onboard LEDs are used as indicators, if no OLED.
+        digitalWrite(PIN_D0, LOW); // led on when in connect
+        digitalWrite(PIN_D4, LOW); // interval led on as a heartbeat
+      #endif
+      #ifdef SSD1306_128_64
+        updateDisplay();
+      #endif
 
       smartDelay(100); // initial feeding of the GPS to make sure we have data
 
@@ -274,7 +312,7 @@ void loop() {
             send_now = 0;
           }
         } else {
-          Serial.println("No report.");
+          Serial.printf("HDOP=%0.1f No report.\n", hdop_value);
           send_now = 1;
         }
       } else {
@@ -286,8 +324,10 @@ void loop() {
         Serial.println(F("No GPS detected: check wiring."));
         while (true);
       }
-      digitalWrite(PIN_D4, HIGH); // led off
-      smartDelay(5000);
+      #ifndef SSD1306_128_64
+        digitalWrite(PIN_D4, HIGH); // led off
+      #endif
+      smartDelay(1000);
     }
   } else if (WiFi.getMode() == WIFI_AP) { // portal mode
     dnsServer.processNextRequest();
@@ -322,8 +362,8 @@ static void smartDelay(unsigned long ms)
   unsigned long start = millis();
   do
   {
-    while (ss.available())
-      gps.encode(ss.read());
+    while (gpsSerial.available())
+      gps.encode(gpsSerial.read());
   } while (millis() - start < ms);
 }
 
@@ -393,7 +433,7 @@ char* positionReportWithAltitude() {
   String symbolStr = String(symbol_str);
 
   if (gps.location.isValid()) {
-    sprintf(report, "%s>%s,TCPIP*:!%02.0f%02.2f%s%c%03.0f%02.2f%s%c%03.0f/%03.0f/A=%06.0f",
+    sprintf(report, "%s>%s,TCPIP*:!%02.0f%05.2f%s%c%03.0f%05.2f%s%c%03.0f/%03.0f/A=%06.0f",
             mycall, APRSSOFTWARE,
             (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60, (gps.location.rawLat().negative ? "S" : "N"), symbol_str[0],
             (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60, (gps.location.rawLng().negative ? "W" : "E"), symbol_str[1],
@@ -401,6 +441,86 @@ char* positionReportWithAltitude() {
   }
   return (report);
 }
+
+#ifdef SSD1306_128_64
+void updateDisplay() {
+  char tmp[22]; // buffer that fits a 21 character string with null, the length of line.
+  memset (tmp, '\0' , sizeof(tmp));
+
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.clearDisplay();
+
+  // First line: Module name and then my call right aligned. 
+  display.setCursor(1, 1); // one pixel in from top left, position of first character's top left corner
+  display.print("APRS-IS");
+  display.setCursor(49, 1);
+  display.printf("%13s", mycall);
+
+  // Second line: APRS-IS host
+  display.setCursor(1, 9);
+  strncat(tmp, aprshost, 21); // Copy content of aprshost up-to 21 characters 
+  display.print(tmp); // and display it
+  memset (tmp, '\0' , sizeof(tmp));
+
+  // Third line: Beacon comment
+  display.setCursor(1, 17);
+  strncat(tmp, comment, 21); // Copy content of comment up-to 21 characters 
+  display.print(tmp); // and display it
+  memset (tmp, '\0' , sizeof(tmp));
+
+  // Fourth line: Speed and Course
+  display.setCursor(1, 25);
+  display.printf("SPD %6.0f CSE    %03.0f", (float)gps.speed.kmph(), (float)gps.course.deg());
+
+  // Fifth line: Latitude and longitude
+  display.setCursor(1, 33);
+  display.printf("%s %02.0f %05.2f %s%03.0f %05.2f",
+    (gps.location.rawLat().negative ? "S" : "N"), (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60,
+    (gps.location.rawLng().negative ? "W" : "E"), (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60);
+  display.drawPixel(27, 33, WHITE);
+  display.drawPixel(26, 34, WHITE); display.drawPixel(28, 34, WHITE);
+  display.drawPixel(27, 35, WHITE);
+  display.drawPixel(93, 33, WHITE);
+  display.drawPixel(92, 34, WHITE); display.drawPixel(94, 34, WHITE);
+  display.drawPixel(93, 35, WHITE);
+
+  // Sixth line: GPS Fix and HDOP
+  display.setCursor(1, 41);
+  switch((int)gpsFix.value()) {
+    case 3:
+      strncat(tmp, "3D", 2);
+      break;
+    case 2:
+      strncat(tmp, "2D", 2);
+      break;
+    default:
+      strncat(tmp, "--", 2);
+  }
+  display.printf("FIX %6s HDOP %5.1f", tmp, (float)gps.hdop.value() / 100);
+  memset (tmp, '\0' , sizeof(tmp));
+
+  // Seventh line: Connected wifi, first the logo
+  display.drawPixel(7, 49, WHITE);
+  display.drawPixel(5, 50, WHITE); display.drawPixel(8, 50, WHITE);
+  display.drawPixel(6, 51, WHITE); display.drawPixel(9, 51, WHITE);
+  display.drawPixel(3, 52, WHITE); display.drawPixel(6, 52, WHITE); display.drawPixel(9, 52, WHITE);
+  display.drawPixel(6, 53, WHITE); display.drawPixel(9, 53, WHITE);
+  display.drawPixel(5, 54, WHITE); display.drawPixel(8, 54, WHITE);
+  display.drawPixel(7, 55, WHITE);
+  // then Current SSID we are connected to
+  display.setCursor(13, 49);
+  display.print(currssid);
+  // Eighth line: Date and time
+  display.setCursor(1, 57);
+  display.printf("%4.0f-%02.0f-%02.0f  z%02.0f:%02.0f:%02.0f",
+  (float)gps.date.year(), (float)gps.date.month(), (float)gps.date.day(),
+  (float)gps.time.hour(), (float)gps.time.minute(), (float)gps.time.second());
+
+  // update display with all of the above graphics
+  display.display(); 
+}
+#endif
 
 /* ------------------------------------------------------------------------------- */
 /* Portal code begins here                                                         */

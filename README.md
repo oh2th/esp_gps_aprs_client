@@ -1,7 +1,8 @@
 # ESP SmartBeacon APRS-IS Client
 GPS receiver that can send APRS position reports to an APRS-IS server. This client has also SmartBeacon(TM) capability.
-![ESPGPS](s/ESPGPS.jpg)
-![ESPGPS](s/20200510_174625.jpg)
+![ESPGPS Proto](s/ESPGPS-proto.jpg)
+![ESPGPS Almost there](s/ESPGPS-almost.jpg)
+![ESPGPS Final casing](s/ESPGPS-final.jpg)
 
 
 ## Hardware prerequisities

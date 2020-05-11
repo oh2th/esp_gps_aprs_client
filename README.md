@@ -1,9 +1,5 @@
 # ESP SmartBeacon APRS-IS Client
 GPS receiver that can send APRS position reports to an APRS-IS server. This client has also SmartBeacon(TM) capability.
-![ESPGPS Proto](s/ESPGPS-proto.jpg)
-![ESPGPS Almost there](s/ESPGPS-almost.jpg)
-![ESPGPS Final casing](s/ESPGPS-final.jpg)
-
 
 ## Hardware prerequisities
 - An esp8266 board
@@ -65,5 +61,10 @@ want to mess up your board or make a denial of service to it using eg. buffer ov
 
 Credits for the configuration portal mode goes to [Mikko](https://github.com/oh2mp/).
 
-### Sample screenshots from the portal
+## Some pictures of the device
+![ESPGPS Proto](s/ESPGPS-proto.jpg)
+![ESPGPS Almost there](s/ESPGPS-almost.jpg)
+![ESPGPS Final casing](s/ESPGPS-final.jpg)
+
+## Sample pictures of the portal
 ![screenshot](s/screenshot.jpg)

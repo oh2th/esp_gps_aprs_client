@@ -64,7 +64,8 @@ Credits for the configuration portal mode goes to [Mikko](https://github.com/oh2
 ## Display
 The optional display shows current information such as configuration, connectivity and runtime position.
 ![ESPGPS Display](s/ESPGPS-display.jpg)
-The fields in display are these, and of course you can customize in the code.
+
+The fields in display are these, and of course you can customize it in the code.
 ```
 Wifi AP                 mycall(*)
 APRS comment
@@ -86,7 +87,9 @@ You can also send gps data to an InfluxDB. These fieldkeys and values are sent.
 - spd = speed m/s
 - alt = altitude in decimal meters
 - mod = NMEA mode 1, 2 or 3
+
 In the configuration portal you can configure the DB-connection information. You receive something like this in the database:
+
 ```
 > select * from gps
 name: gps

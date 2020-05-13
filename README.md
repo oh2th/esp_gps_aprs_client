@@ -64,8 +64,8 @@ Credits for the configuration portal mode goes to [Mikko](https://github.com/oh2
 ## Display
 The optional display shows current information such as configuration, connectivity and runtime position.
 ![ESPGPS Display](s/ESPGPS-display.jpg)
-|Wifi AP|mycall(*)|
 |---|---|
+|Wifi AP|mycall(*)|
 |APRS comment|
 |Number of satellites and Fix status|HDOP|
 |Speed (km/h)|Course|

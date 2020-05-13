@@ -94,11 +94,10 @@ In the configuration portal you can configure the DB-connection information. You
 > select * from gps
 name: gps
 ---------
-time                    alt     call    cse     lat             lon             spd     tocall
-1589354350350738663     20.8    OH2TH-8 0       60.196957       24.590744       0.1     APESPG
-1589354491376787771     18.6    OH2TH-8 0       60.196991       24.590691       0       APESPG
-1589354918331182449     12.1    OH2TH-8 219     60.196941       24.5907         0.6     APESPG
-1589355020851526148     7.4     OH2TH-8 0       60.197033       24.590605       0.1     APESPG
+time                    alt     call    cse     lat             lon             mod     spd     tocall
+1589362483404306849     19      OH2TH-8 187     60.197029       24.590729       3       0.7     APESPG
+1589364288772944141     10.7    OH2TH-8 169     60.196991       24.590706       3       0       APESPG
+1589364516196077483     20.1    OH2TH-8 45      60.197006       24.590755       3       0.6     APESPG
 ```
 
 ## Some pictures of the device

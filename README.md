@@ -64,14 +64,17 @@ Credits for the configuration portal mode goes to [Mikko](https://github.com/oh2
 ## Display
 The optional display shows current information such as configuration, connectivity and runtime position.
 ![ESPGPS Display](s/ESPGPS-display.jpg)
-|||
-|---|---|
-|Wifi AP|mycall(*)|
-|APRS comment|
-|Number of satellites and Fix status|HDOP|
-|Speed (km/h)|Course|
-|Latitude|Longitude|
-|date|time UT|
+```
+Wifi AP              mycall(*)
+APRS comment
+
+Num sats and Fix          HDOP
+Speed (km/h)            Course
+Latitude             Longitude 
+
+date               time UT
+```
+
 
 The (*) next to "mycall" shows if the last beacon was successfully sent to the selected APRS-IS server.
 

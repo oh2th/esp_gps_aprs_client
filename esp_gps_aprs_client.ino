@@ -36,9 +36,9 @@
 #define PIN_D0  16  // WAKE         Onboard LED
 #define PIN_D1   5  // User purpose I2C_SCL
 #define PIN_D2   4  // User purpose I2C_SDA
-#define PIN_D3   0  //                          (Low on boot means enter FLASH mode)
+#define PIN_D3   0  //              APREQUEST   (Low on boot means enter FLASH mode)
 #define PIN_D4   2  // TXD1         Onboard LED (must be high on boot to go to UART0 FLASH mode)
-#define PIN_D5  14  // HSCLK        APREQUEST
+#define PIN_D5  14  // HSCLK        
 #define PIN_D6  12  // HMISO
 #define PIN_D7  13  // HMOSI  RXD2  GPS
 #define PIN_D8  15  // HCS    TXD2  GPS         (must be low on boot to enter UART0 FLASH mode)
@@ -57,7 +57,9 @@
 #define APRSSOFTWARE "APESPG"
 
 // Configuration AP-mode when LOW
-#define APREQUEST PIN_D5
+// Note the PIN_D3 is the same as enter flash mode while pressing reset.
+// If PIN_D3 is pulled low while in running mode, we enter AP-mode
+#define APREQUEST PIN_D3
 #define APTIMEOUT 180000
 
 // SSD1306 I2C Display
@@ -90,28 +92,18 @@ char symbol_str[8];             // APRS Symbol
 uint16_t aprsport = 14580;      // Port is fixed to TCP/14580
 
 // APRS SmartBeacon configuration
-//Slow Speed = Speed below which I consider myself "stopped" 10 m.p.h.
-//Slow Rate = Beacon rate while speed below stopped threshold (1750s = ~29mins)
-//Fast Speed = Speed that I send out beacons at fast rate 100 m.p.h.
-//Fast Rate = Beacon rate at fastest interval (175s ~ 3 mins)
-//Any speed between these limits, the beacon rate is proportional.
 char low_speed_str[8], low_rate_str[8], high_speed_str[8], high_rate_str[8];
 int low_speed, low_rate, high_speed, high_rate;
-//Min Turn Time = don't beacon any faster than this interval in a turn (40sec)
-//Min Turn Angle = Minimum turn angle to consider beaconing. (20 degrees)
-//Turn Slope = Number when divided by current speed creates an angle that is added to Min Turn Angle to trigger a beacon.
 char turn_time_str[8], turn_min_str[8], turn_slope_str[8];
 int turn_time, turn_min, turn_slope;
 unsigned long lastBeaconMillis;
-int send_now = 1;
+int send_now = 1, aprs_ok = 0;
 int prev_heading;
 
 // InfluxDB Configuration
 char measurement[32];           // measurement name for InfluxDB
 char userpass[64];              // user:pass for InfluxDB
 String b64pass;                 // base64 encoded user:pass for basic auth
-char intervalstr[6];            // interval as string
-int interval = 0;               // interval as minutes
 
 url_info urlp;
 char url[128];
@@ -134,9 +126,12 @@ ESP8266WiFiMulti WiFiMulti;
 ESP8266WebServer server(80);
 IPAddress apIP(192, 168, 4, 1); // portal ip address
 DNSServer dnsServer;
-WiFiClient client;
+BearSSL::WiFiClientSecure httpsclient;
+WiFiClient httpclient;
 
 File file;
+
+const int API_TIMEOUT = 10000; // timeout in milliseconds for http/https client
 
 /* ------------------------------------------------------------------------------- */
 void setup() {
@@ -147,15 +142,15 @@ void setup() {
   Serial.begin(115200);
   gpsSerial.begin(GPSBaud);
   Serial.println(F("ESP SmartBeacon APRS-IS Client by OH2TH."));
-  Serial.print(F("Using TinyGPS++ library v. ")); Serial.println(TinyGPSPlus::libraryVersion());
 
   #ifdef SSD1306_128_64
     if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
       Serial.println(F("SSD1306 allocation failed"));
       for(;;); // Don't proceed, loop forever
     }
-    display.display();
-    delay(2000);
+    // Displays Adafruit logo for 2 secs, initialized be Adafruit GFX library.
+    // display.display();
+    // delay(2000);
     display.clearDisplay();
     display.display();
   #endif
@@ -163,6 +158,7 @@ void setup() {
   SPIFFS.begin();
 
   readCfgAPRS();
+  readCfgInfluxDB();
 
   int len;
   if (SPIFFS.exists("/last_wifi.txt")) {
@@ -192,9 +188,11 @@ void setup() {
       file.readBytesUntil('\t', ssid, 32);
       file.readBytesUntil('\n', pass, 64);
       WiFiMulti.addAP(ssid, pass);
-      Serial.printf("wifi loaded: %s / %s\n", ssid, pass);
     }
     file.close();
+    httpsclient.setInsecure(); // For allowing self signed, don't care certificate validity
+    httpsclient.setTimeout(API_TIMEOUT);
+    httpclient.setTimeout(API_TIMEOUT);
   } else {
     startPortal(); // no settings were found, so start the portal without button
   }
@@ -258,16 +256,22 @@ void loop() {
           //
           // SmartBeacon (http://www.hamhud.net/hh2/smartbeacon.html)
           //
-          Serial.print("Beacon -> ");
+          // Slow Speed = Speed below which I consider myself "stopped" 10 m.p.h.
+          // Slow Rate = Beacon rate while speed below stopped threshold (1750s = ~29mins)
+          // Fast Speed = Speed that I send out beacons at fast rate 100 m.p.h.
+          // Fast Rate = Beacon rate at fastest interval (175s ~ 3 mins)
+          // Any speed between these limits, the beacon rate is proportional.
+          // Min Turn Time = don't beacon any faster than this interval in a turn (40sec)
+          // Min Turn Angle = Minimum turn angle to consider beaconing. (20 degrees)
+          // Turn Slope = Number when divided by current speed creates an angle that is added to Min Turn Angle to trigger a beacon.
+
           // Stopped - slow rate beacon
           if (cur_speed < low_speed) {
             beacon_rate = low_rate;
-            Serial.printf("low_spd, ");
           } else {
             // Adjust beacon rate according to speed
             if (cur_speed > high_speed) {
               beacon_rate = high_rate;
-              Serial.printf("hgh_spd, ");
             } else {
               beacon_rate = high_rate * high_speed / cur_speed;
               if (beacon_rate > low_rate) {
@@ -276,7 +280,6 @@ void loop() {
               if (beacon_rate < high_rate) {
                 beacon_rate = high_rate;
               }
-              Serial.printf("cur_spd, ");
             }                                                   
             // Corner pegging - ALWAYS occurs if not "stopped"
             // - turn threshold is speed-dependent
@@ -288,26 +291,61 @@ void loop() {
             }
             if ((heading_change_since_beacon > turn_threshold) && (secs_since_beacon > turn_time)) {
               send_now = 1;
-              Serial.printf("turning, ");
             }
           }
-          Serial.printf("rate=%lu/%i send=%i speed=%i heading=%i was %i changed %i\n", secs_since_beacon, beacon_rate, send_now, cur_speed, cur_heading, prev_heading, heading_change_since_beacon);
 
           // Send beacon if SmartBeacon interval (beacon_rate) is reached
           if (secs_since_beacon > beacon_rate || send_now == 1) {
             lastBeaconMillis = currentMillis;
-            if (client.connect(aprshost, aprsport)) {
+            // APRS-IS
+            if (httpclient.connect(aprshost, aprsport)) {
               Serial.printf("HDOP=%0.1f and connected to %s:%u\n", hdop_value, aprshost, aprsport);
-              client.printf("user %s pass %s\r\n", mycall, aprspass);
+              httpclient.printf("user %s pass %s\r\n", mycall, aprspass);
               delay(100);
-              client.printf("%s%s\r\n", report, comment);
-              client.stop();
+              httpclient.printf("%s%s\r\n", report, comment);
+              httpclient.stop();
               Serial.printf("OK: %s\n", report);
               prev_heading = cur_heading;
+              aprs_ok = 1;
             } else {
-              Serial.println("Unable to connect to APRS-IS.");
               Serial.printf("HDOP=%0.1f but failed to connect to %s:%u as %s %s\n", hdop_value, aprshost, aprsport, mycall, aprspass);
-              Serial.printf("FAIL: %s\n", report);
+              aprs_ok = 0;
+            }
+            // If url is configured and we have something to report, transmit data to InfluxDB
+            const char* influx_report = influxPositionReport();
+            if(url[0] == 'h' && influx_report[0] != '\0') {
+              if (strcmp(scheme, "https") == 0) {
+                if (httpsclient.connect(host, port)) {
+                  httpsclient.printf("POST %s HTTP/1.1\nHost: %s\n", path, host);
+                  httpsclient.printf("Content-Length: %d\nAuthorization: Basic ", strlen(influx_report));
+                  httpsclient.print(b64pass);
+                  httpsclient.print("\nConnection: close\n\n");
+                  httpsclient.print(influx_report);
+
+                  while (httpsclient.connected()) {
+                    Serial.println(httpsclient.readString());
+                  }
+                  httpsclient.stop();
+                } else {
+                  Serial.printf("%s connect failed.\n",scheme);
+                }
+              }
+              if (strcmp(scheme, "http") == 0) {
+                if (httpclient.connect(host, port)) {
+                  httpclient.printf("POST %s HTTP/1.1\nHost: %s\n", path, host);
+                  httpclient.printf("Content-Length: %d\nAuthorization: Basic ", strlen(influx_report));
+                  httpclient.print(b64pass);
+                  httpclient.print("\nConnection: close\n\n");
+                  httpclient.print(influx_report);
+                
+                  while (httpclient.connected()) {
+                    Serial.println(httpclient.readString());
+                  }
+                httpclient.stop();
+                } else {
+                  Serial.printf("%s connect failed.\n",scheme);
+                }
+              }
             }
             send_now = 0;
           }
@@ -417,10 +455,39 @@ static void readCfgAPRS()
     
     file.close();
   }
-  Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
-  Serial.printf("APRS comment: %s\n", comment);
-  //Serial.printf("Low speed %s, Low rate %s, High speed %s, High rate %s, Turn min %s, Turn slope %s, Turn time %s\n", low_speed_str, low_rate_str, high_speed_str, high_rate_str, turn_min_str, turn_slope_str, turn_time_str);
-  Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
+  //Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
+  //Serial.printf("APRS comment: %s\n", comment);
+  //Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
+}
+
+// Function to read InfluxDB configuration from file.
+static void readCfgInfluxDB()
+{
+  if (SPIFFS.exists("/influxdb.txt")) {
+    file = SPIFFS.open("/influxdb.txt", "r");
+    file.readBytesUntil('\n', url, 128);
+    if (url[strlen(url)-1] == 13) {url[strlen(url)-1] = 0;}
+    file.readBytesUntil('\n', userpass, 64);
+    if (userpass[strlen(userpass)-1] == 13) {userpass[strlen(userpass)-1] = 0;}
+    file.readBytesUntil('\n', measurement, 32);
+    if (measurement[strlen(measurement)-1] == 13) {measurement[strlen(measurement)-1] = 0;}
+    file.close();
+    b64pass = String(userpass);
+    b64pass.trim();
+    b64pass = base64::encode(b64pass, 0);
+  }
+  // handle the InfluxDB url
+  if (url[0] == 'h') {
+    split_url(&urlp, url);
+                
+    Serial.printf("scheme %s\nhost %s\nport %d\npath %s\n\n",urlp.scheme, urlp.hostn, urlp.port, urlp.path);
+
+    strcpy(scheme, urlp.scheme);
+    strcpy(host, urlp.hostn);
+    port = urlp.port;
+    strcpy(path, urlp.path);
+    sprintf(url,"%s://%s:%d%s\0",scheme,host,port,path);
+  }
 }
 
 // -------------------------------------------------------------------------------
@@ -442,6 +509,29 @@ char* positionReportWithAltitude() {
   return (report);
 }
 
+// -------------------------------------------------------------------------------
+// Report data for sending to InfluxDB where fields:
+// lat = latitude in decimal degrees
+// log = longitude in decimal degrees
+// cse = heading degrees from north
+// spd = speed m/s
+// alt = altitude in decimal meters
+// mod = NMEA mode 1, 2 or 3
+// -------------------------------------------------------------------------------
+char* influxPositionReport() {
+  static char report [256] = "";
+  memset (report, '\0' , sizeof(report));
+  
+  if (gps.location.isValid()) {
+    sprintf(report, "%s,call=%s,tocall=%s lat=%s%f,lon=%s%f,cse=%0.0f,spd=%0.1f,alt=%0.1f,mod=%s",
+      measurement, mycall, APRSSOFTWARE,
+      (gps.location.rawLat().negative ? "-" : ""), (float)gps.location.lat(),
+      (gps.location.rawLng().negative ? "-" : ""), (float)gps.location.lng(),
+      (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(),gpsFix.value());
+  }
+  return (report);
+}
+
 #ifdef SSD1306_128_64
 void updateDisplay() {
   char tmp[22]; // buffer that fits a 21 character string with null, the length of line.
@@ -451,43 +541,31 @@ void updateDisplay() {
   display.setTextColor(WHITE);
   display.clearDisplay();
 
-  // First line: Module name and then my call right aligned. 
-  display.setCursor(1, 1); // one pixel in from top left, position of first character's top left corner
-  display.print("APRS-IS");
-  display.setCursor(49, 1);
-  display.printf("%13s", mycall);
+  // First line: Connected wifi and then my call right aligned. 
+  display.drawPixel(7, 1, WHITE);
+  display.drawPixel(5, 2, WHITE); display.drawPixel(8, 2, WHITE);
+  display.drawPixel(6, 3, WHITE); display.drawPixel(9, 3, WHITE);
+  display.drawPixel(3, 4, WHITE); display.drawPixel(6, 4, WHITE); display.drawPixel(9, 4, WHITE);
+  display.drawPixel(6, 5, WHITE); display.drawPixel(9, 5, WHITE);
+  display.drawPixel(5, 6, WHITE); display.drawPixel(8, 6, WHITE);
+  display.drawPixel(7, 7, WHITE);
+  // then Current SSID we are connected to
+  display.setCursor(13, 1);
+  display.print(currssid);
+  // and right align mycall based on the screen width and
+  display.setCursor(OLED_WIDTH-(strlen(mycall)+1)*6, 1);
+  display.print(mycall);
+  display.print((aprs_ok ? "*" : " "));
 
-  // Second line: APRS-IS host
+  // Second line: Beacon comment
   display.setCursor(1, 9);
-  strncat(tmp, aprshost, 21); // Copy content of aprshost up-to 21 characters 
-  display.print(tmp); // and display it
-  memset (tmp, '\0' , sizeof(tmp));
-
-  // Third line: Beacon comment
-  display.setCursor(1, 17);
   strncat(tmp, comment, 21); // Copy content of comment up-to 21 characters 
   display.print(tmp); // and display it
   memset (tmp, '\0' , sizeof(tmp));
 
-  // Fourth line: Speed and Course
+  // Sixth line: GPS Satellites and HDOP
   display.setCursor(1, 25);
-  display.printf("SPD %6.0f CSE    %03.0f", (float)gps.speed.kmph(), (float)gps.course.deg());
-
-  // Fifth line: Latitude and longitude
-  display.setCursor(1, 33);
-  display.printf("%s %02.0f %05.2f %s%03.0f %05.2f",
-    (gps.location.rawLat().negative ? "S" : "N"), (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60,
-    (gps.location.rawLng().negative ? "W" : "E"), (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60);
-  display.drawPixel(27, 33, WHITE);
-  display.drawPixel(26, 34, WHITE); display.drawPixel(28, 34, WHITE);
-  display.drawPixel(27, 35, WHITE);
-  display.drawPixel(93, 33, WHITE);
-  display.drawPixel(92, 34, WHITE); display.drawPixel(94, 34, WHITE);
-  display.drawPixel(93, 35, WHITE);
-
-  // Sixth line: GPS Fix and HDOP
-  display.setCursor(1, 41);
-  switch((int)gpsFix.value()) {
+  switch(atoi(gpsFix.value())) {
     case 3:
       strncat(tmp, "3D", 2);
       break;
@@ -497,20 +575,28 @@ void updateDisplay() {
     default:
       strncat(tmp, "--", 2);
   }
-  display.printf("FIX %6s HDOP %5.1f", tmp, (float)gps.hdop.value() / 100);
+  display.printf("SATS %2d %s HDOP %5.1f", (int)gps.satellites.value(), tmp, (float)gps.hdop.value() / 100);
   memset (tmp, '\0' , sizeof(tmp));
 
-  // Seventh line: Connected wifi, first the logo
-  display.drawPixel(7, 49, WHITE);
-  display.drawPixel(5, 50, WHITE); display.drawPixel(8, 50, WHITE);
-  display.drawPixel(6, 51, WHITE); display.drawPixel(9, 51, WHITE);
-  display.drawPixel(3, 52, WHITE); display.drawPixel(6, 52, WHITE); display.drawPixel(9, 52, WHITE);
-  display.drawPixel(6, 53, WHITE); display.drawPixel(9, 53, WHITE);
-  display.drawPixel(5, 54, WHITE); display.drawPixel(8, 54, WHITE);
-  display.drawPixel(7, 55, WHITE);
-  // then Current SSID we are connected to
-  display.setCursor(13, 49);
-  display.print(currssid);
+  // Fourth line: Speed and Course
+  display.setCursor(1, 33);
+  display.printf("SPD %6.0f CSE    %03.0f", (float)gps.speed.kmph(), (float)gps.course.deg());
+
+  // Fifth line: Latitude and longitude
+  display.setCursor(1, 41);
+  display.printf("%s %02.0f %05.2f %s%03.0f %05.2f",
+    (gps.location.rawLat().negative ? "S" : "N"), (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60,
+    (gps.location.rawLng().negative ? "W" : "E"), (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60);
+    display.drawPixel(27, 41, WHITE);
+    display.drawPixel(26, 42, WHITE); display.drawPixel(28, 42, WHITE);
+    display.drawPixel(27, 43, WHITE);
+    display.drawPixel(93, 41, WHITE);
+    display.drawPixel(92, 42, WHITE); display.drawPixel(94, 42, WHITE);
+    display.drawPixel(93, 43, WHITE);
+
+  // Seventh line: not used
+  // display.setCursor(11, 49);
+
   // Eighth line: Date and time
   display.setCursor(1, 57);
   display.printf("%4.0f-%02.0f-%02.0f  z%02.0f:%02.0f:%02.0f",
@@ -716,7 +802,6 @@ void httpInflux() {
   html.replace("###URL###", String(url));
   html.replace("###USERPASS###", String(userpass));
   html.replace("###IDBM###", String(measurement));
-  html.replace("###INTERVAL###", String(intervalstr));
 
   server.send(200, "text/html; charset=UTF-8", html);
 }
@@ -730,7 +815,6 @@ void httpSaveInflux() {
   file.println(server.arg("url"));
   file.println(server.arg("userpass"));
   file.println(server.arg("idbm"));
-  file.println(server.arg("interval"));
   file.close();
 
   // reread
@@ -746,10 +830,6 @@ void httpSaveInflux() {
   file.readBytesUntil('\n', measurement, 32);
   if (measurement[strlen(measurement) - 1] == 13) {
     measurement[strlen(measurement) - 1] = 0;
-  }
-  file.readBytesUntil('\n', intervalstr, 8);
-  if (intervalstr[strlen(intervalstr) - 1] == 13) {
-    intervalstr[strlen(intervalstr) - 1] = 0;
   }
   file.close();
 

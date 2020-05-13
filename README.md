@@ -61,6 +61,38 @@ want to mess up your board or make a denial of service to it using eg. buffer ov
 
 Credits for the configuration portal mode goes to [Mikko](https://github.com/oh2mp/).
 
+## Display
+The optional display shows current information such as configuration, connectivity and runtime position.
+![ESPGPS Display](s/ESPGPS-display.jpg)
+|Wifi AP|mycall(*)|
+|APRS comment|
+|Number of satellites and Fix status|HDOP|
+|Speed (km/h)|Course|
+|Latitude|Longitude|
+|date|time UT|
+
+The (*) next to "mycall" shows if the last beacon was successfully sent to the selected APRS-IS server.
+
+## Sending to your InfluxDB
+You can also send gps data to an InfluxDB. These fieldkeys and values are sent.
+- lat = latitude in decimal degrees
+- log = longitude in decimal degrees
+- cse = heading degrees from north
+- spd = speed m/s
+- alt = altitude in decimal meters
+- mod = NMEA mode 1, 2 or 3
+In the configuration portal you can configure the DB-connection information. You receive something like this in the database:
+```
+> select * from gps
+name: gps
+---------
+time                    alt     call    cse     lat             lon             spd     tocall
+1589354350350738663     20.8    OH2TH-8 0       60.196957       24.590744       0.1     APESPG
+1589354491376787771     18.6    OH2TH-8 0       60.196991       24.590691       0       APESPG
+1589354918331182449     12.1    OH2TH-8 219     60.196941       24.5907         0.6     APESPG
+1589355020851526148     7.4     OH2TH-8 0       60.197033       24.590605       0.1     APESPG
+```
+
 ## Some pictures of the device
 ![ESPGPS Proto](s/ESPGPS-proto.jpg)
 ![ESPGPS Almost there](s/ESPGPS-almost.jpg)

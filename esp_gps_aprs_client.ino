@@ -611,10 +611,11 @@ void updateDisplay() {
   // then Current SSID we are connected to
   display.setCursor(13, 1);
   display.print(currssid);
-  // and right align mycall based on the screen width and
-  display.setCursor(OLED_WIDTH - (strlen(mycall) + 1) * 6, 1);
+  // and right align mycall based on the screen width and leave 3 chars space for APRS and INFLUX status
+  display.setCursor(OLED_WIDTH - (strlen(mycall) + 3) * 6, 1);
   display.print(mycall);
-  display.print((aprs_ok ? "*" : " "));
+  display.print((aprs_ok ? " A" : " -"));
+  display.print((influx_ok ? "I" : "-"));
 
   // Second line: Beacon comment
   display.setCursor(1, 9);

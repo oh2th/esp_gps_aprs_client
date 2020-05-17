@@ -35,18 +35,7 @@ the onboard LEDs will show the board operational status.
 - Portal mode - alternating
 - Operational - one is steady, the other one when sending to APRS-IS
 
-## APRS configuration
-Use the Portal mode to configure the APRS settings:
-- Callsign to transmit as
-- APRS passcode
-- Comment text to send with beacon
-- APRS-IS Server Hostname, use one of the rotated names for redundancy and balance on the hosts
-- APRS Symbol, reference the APRS symbols table for the two character string
-- [SmartBeacon(TM)](http://www.hamhud.net/hh2/smartbeacon.html) parameters
-
-For the SmartBeacon(TM) parameters there are a number of sites explaining the algorythm and gives some hints on good sets depending if your are walking, on the bike or driving a car. 
-
-Only valid position reports are transmitted and only when HDOP is non-zero and better than 10. (0 < HDOP < 10)
+# Operating the device
 
 ## Portal mode
 When your board is in portal mode, it blinks both onboard LEDs. Take your phone and connect to WiFi network 
@@ -60,6 +49,43 @@ There's almost no sanity checks for the data sent from the forms. This is not a 
 want to mess up your board or make a denial of service to it using eg. buffer overflows, feel free to do so.
 
 Credits for the configuration portal mode goes to [Mikko](https://github.com/oh2mp/).
+
+## APRS configuration
+Use the Portal mode to configure the APRS settings:
+- Callsign to transmit as
+- APRS passcode
+- Comment text to send with beacon
+- APRS-IS Server Hostname, use one of the rotated names for redundancy and balance on the hosts
+- APRS Symbol, reference the APRS symbols table for the two character string
+- [SmartBeacon(TM)](http://www.hamhud.net/hh2/smartbeacon.html) parameters
+
+For the SmartBeacon(TM) parameters there are a number of sites explaining the algorythm and gives some hints on good sets depending if your are walking, on the bike or driving a car. 
+
+## InfluxDB
+The device can also send position update to an InfluxDB. Enter portal mode to configure:
+- The write URL to your InfluxDB database instance, leave empty or prefix any other character than 'h' to disable updates
+- username:password for the database
+- and the measurement name to store the data in
+
+The data is update using fields:
+- lat = latitude in decimal degrees
+- log = longitude in decimal degrees
+- cse = heading degrees from north
+- spd = speed m/s
+- alt = altitude in decimal meters
+- mod = NMEA mode 1 - no fix, 2 - 2D fix or 3 - 3D fix
+
+Update interval is tied to APRS SmartBeacon(TM). You should receive something like this in the database:
+
+```
+> select * from gps
+name: gps
+---------
+time                    alt     call    cse     lat             lon             mod     spd     tocall
+1589362483404306849     19      OH2TH-8 187     60.123456       24.543210       3       0.7     APESPG
+1589364288772944141     10.7    OH2TH-8 169     60.123456       24.543210       3       0       APESPG
+1589364516196077483     20.1    OH2TH-8 45      60.123456       24.543210       3       0.6     APESPG
+```
 
 ## Display
 The optional display shows current information such as configuration, connectivity and runtime position.
@@ -79,26 +105,7 @@ date                      time UT
 
 The (*) next to "mycall" shows if the last beacon was successfully sent to the selected APRS-IS server.
 
-## Sending to your InfluxDB
-You can also send gps data to an InfluxDB. These fieldkeys and values are sent.
-- lat = latitude in decimal degrees
-- log = longitude in decimal degrees
-- cse = heading degrees from north
-- spd = speed m/s
-- alt = altitude in decimal meters
-- mod = NMEA mode 1, 2 or 3
-
-In the configuration portal you can configure the DB-connection information. You receive something like this in the database:
-
-```
-> select * from gps
-name: gps
----------
-time                    alt     call    cse     lat             lon             mod     spd     tocall
-1589362483404306849     19      OH2TH-8 187     60.197029       24.590729       3       0.7     APESPG
-1589364288772944141     10.7    OH2TH-8 169     60.196991       24.590706       3       0       APESPG
-1589364516196077483     20.1    OH2TH-8 45      60.197006       24.590755       3       0.6     APESPG
-```
+# Mode pictures and screenshots
 
 ## Some pictures of the device
 ![ESPGPS Proto](s/ESPGPS-proto.jpg)
@@ -107,3 +114,6 @@ time                    alt     call    cse     lat             lon             
 
 ## Sample pictures of the portal
 ![screenshot](s/screenshot.jpg)
+
+# Disclaimer
+The device was built to my own needs, and has only been tested in the northern hemisphere east of Greenwich, so negative coordinates may or may not work properly. This has also not been checked for memory leaks. Feel free to create an issue and I'll try to fix the code at some time, or not. Even better if you have a fix, let me know and I can import the fix.

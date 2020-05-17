@@ -64,13 +64,13 @@
 
 // SSD1306 I2C Display
 #define SSD1306_128_64  // Comment out this line to disable display code
-                        // If this display is used, onboard LEDs are off while normal operation
+// If this display is used, onboard LEDs are off while normal operation
 #ifdef SSD1306_128_64
-  #define OLED_ADDR 0x3C
-  #define OLED_RESET -1
-  #define OLED_WIDTH 128
-  #define OLED_HEIGHT 64
-  Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+#define OLED_ADDR 0x3C
+#define OLED_RESET -1
+#define OLED_WIDTH 128
+#define OLED_HEIGHT 64
+Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 #endif //SSD1306_128_64
 
 // Use Serial port on TXD2/RXD2 for GPS
@@ -97,7 +97,8 @@ int low_speed, low_rate, high_speed, high_rate;
 char turn_time_str[8], turn_min_str[8], turn_slope_str[8];
 int turn_time, turn_min, turn_slope;
 unsigned long lastBeaconMillis;
-int send_now = 1, aprs_ok = 0;
+int send_now = 1;
+bool aprs_ok = false, influx_ok = false;
 int prev_heading;
 
 // InfluxDB Configuration
@@ -143,17 +144,17 @@ void setup() {
   gpsSerial.begin(GPSBaud);
   Serial.println(F("ESP SmartBeacon APRS-IS Client by OH2TH."));
 
-  #ifdef SSD1306_128_64
-    if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-      Serial.println(F("SSD1306 allocation failed"));
-      for(;;); // Don't proceed, loop forever
-    }
-    // Displays Adafruit logo for 2 secs, initialized be Adafruit GFX library.
-    // display.display();
-    // delay(2000);
-    display.clearDisplay();
-    display.display();
-  #endif
+#ifdef SSD1306_128_64
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;); // Don't proceed, loop forever
+  }
+  // Displays Adafruit logo for 2 secs, initialized be Adafruit GFX library.
+  // display.display();
+  // delay(2000);
+  display.clearDisplay();
+  display.display();
+#endif
 
   SPIFFS.begin();
 
@@ -202,7 +203,7 @@ void setup() {
 }
 
 void loop() {
-  int cur_speed, cur_heading, beacon_rate, turn_threshold, heading_change_since_beacon=0;
+  int cur_speed, cur_heading, beacon_rate, turn_threshold, heading_change_since_beacon = 0;
   unsigned long currentMillis = millis(), secs_since_beacon = (currentMillis - lastBeaconMillis) / 1000;
 
   // Normal running mode, connect to wifi, decode GPS and send APRS packets.
@@ -234,20 +235,17 @@ void loop() {
 
     // When connected to WiFi
     if ((WiFiMulti.run() == WL_CONNECTED)) {
-      #ifndef SSD1306_128_64 // Onboard LEDs are used as indicators, if no OLED.
-        digitalWrite(PIN_D0, LOW); // led on when in connect
-        digitalWrite(PIN_D4, LOW); // interval led on as a heartbeat
-      #endif
-      #ifdef SSD1306_128_64
-        updateDisplay();
-      #endif
+#ifndef SSD1306_128_64 // Onboard LEDs are used as indicators, if no OLED.
+      digitalWrite(PIN_D0, LOW); // led on when in connect
+      digitalWrite(PIN_D4, LOW); // interval led on as a heartbeat
+#endif
+#ifdef SSD1306_128_64
+      updateDisplay();
+#endif
 
       smartDelay(100); // initial feeding of the GPS to make sure we have data
 
-      // For a good position report HDOP should be 1-2 for excellent position or no more that 5 for good position, a value of 5-10 is still moderate
-      // Value of 0 or 99 means there is no coverage.
-      float hdop_value = (float)gps.hdop.value() / 100;
-      if ( hdop_value > 0 && hdop_value < 10 ) {
+      if ( atoi(gpsFix.value()) > 1 ) {
         const char* report = positionReportWithAltitude();
         if (report[0] != '\0') {
           // Position Report available, lets transmit to APRS-IS
@@ -280,11 +278,11 @@ void loop() {
               if (beacon_rate < high_rate) {
                 beacon_rate = high_rate;
               }
-            }                                                   
+            }
             // Corner pegging - ALWAYS occurs if not "stopped"
             // - turn threshold is speed-dependent
             turn_threshold = turn_min + turn_slope / cur_speed;
-            if(prev_heading > cur_heading) {
+            if (prev_heading > cur_heading) {
               heading_change_since_beacon = ((prev_heading - cur_heading + 360) % 360);
             } else {
               heading_change_since_beacon = ((cur_heading - prev_heading + 360) % 360);
@@ -299,62 +297,35 @@ void loop() {
             lastBeaconMillis = currentMillis;
             // APRS-IS
             if (httpclient.connect(aprshost, aprsport)) {
-              Serial.printf("HDOP=%0.1f and connected to %s:%u\n", hdop_value, aprshost, aprsport);
+              Serial.printf("Connected to %s:%u\n", aprshost, aprsport);
               httpclient.printf("user %s pass %s\r\n", mycall, aprspass);
               delay(100);
               httpclient.printf("%s%s\r\n", report, comment);
               httpclient.stop();
               Serial.printf("OK: %s\n", report);
               prev_heading = cur_heading;
-              aprs_ok = 1;
+              aprs_ok = true;
             } else {
-              Serial.printf("HDOP=%0.1f but failed to connect to %s:%u as %s %s\n", hdop_value, aprshost, aprsport, mycall, aprspass);
-              aprs_ok = 0;
+              Serial.printf("Failed to connect to %s:%u as %s %s\n", aprshost, aprsport, mycall, aprspass);
+              aprs_ok = false;
             }
-            // If url is configured and we have something to report, transmit data to InfluxDB
-            const char* influx_report = influxPositionReport();
-            if(url[0] == 'h' && influx_report[0] != '\0') {
-              if (strcmp(scheme, "https") == 0) {
-                if (httpsclient.connect(host, port)) {
-                  httpsclient.printf("POST %s HTTP/1.1\nHost: %s\n", path, host);
-                  httpsclient.printf("Content-Length: %d\nAuthorization: Basic ", strlen(influx_report));
-                  httpsclient.print(b64pass);
-                  httpsclient.print("\nConnection: close\n\n");
-                  httpsclient.print(influx_report);
-
-                  while (httpsclient.connected()) {
-                    Serial.println(httpsclient.readString());
-                  }
-                  httpsclient.stop();
-                } else {
-                  Serial.printf("%s connect failed.\n",scheme);
-                }
-              }
-              if (strcmp(scheme, "http") == 0) {
-                if (httpclient.connect(host, port)) {
-                  httpclient.printf("POST %s HTTP/1.1\nHost: %s\n", path, host);
-                  httpclient.printf("Content-Length: %d\nAuthorization: Basic ", strlen(influx_report));
-                  httpclient.print(b64pass);
-                  httpclient.print("\nConnection: close\n\n");
-                  httpclient.print(influx_report);
-                
-                  while (httpclient.connected()) {
-                    Serial.println(httpclient.readString());
-                  }
-                httpclient.stop();
-                } else {
-                  Serial.printf("%s connect failed.\n",scheme);
-                }
+            // If url is configured, transmit data to InfluxDB
+            if (url[0] == 'h') {
+              int httpcode = sendInfluxData(influxPositionReport());
+              if(httpcode >= 200 and httpcode < 300) {
+                influx_ok = true;
+              } else {
+                influx_ok = false;
               }
             }
             send_now = 0;
           }
         } else {
-          Serial.printf("HDOP=%0.1f No report.\n", hdop_value);
+          Serial.println(F("No report."));
           send_now = 1;
         }
       } else {
-        Serial.printf("HDOP=%0.1f GPS is not ready.\n", hdop_value);
+        Serial.println(F("GPS is not ready."));
         send_now = 1;
       }
 
@@ -362,9 +333,9 @@ void loop() {
         Serial.println(F("No GPS detected: check wiring."));
         while (true);
       }
-      #ifndef SSD1306_128_64
-        digitalWrite(PIN_D4, HIGH); // led off
-      #endif
+#ifndef SSD1306_128_64
+      digitalWrite(PIN_D4, HIGH); // led off
+#endif
       smartDelay(1000);
     }
   } else if (WiFi.getMode() == WIFI_AP) { // portal mode
@@ -411,53 +382,74 @@ static void readCfgAPRS()
   if (SPIFFS.exists("/aprs.txt")) {
     file = SPIFFS.open("/aprs.txt", "r");
     file.readBytesUntil('\n', mycall, 10);
-    if (mycall[strlen(mycall)-1] == 13) {mycall[strlen(mycall)-1] = 0;}
-    
+    if (mycall[strlen(mycall) - 1] == 13) {
+      mycall[strlen(mycall) - 1] = 0;
+    }
+
     file.readBytesUntil('\n', aprspass, 7);
-    if (aprspass[strlen(aprspass)-1] == 13) {aprspass[strlen(aprspass)-1] = 0;}
-    
+    if (aprspass[strlen(aprspass) - 1] == 13) {
+      aprspass[strlen(aprspass) - 1] = 0;
+    }
+
     file.readBytesUntil('\n', comment, 32);
-    if (comment[strlen(comment)-1] == 13) {comment[strlen(comment)-1] = 0;}
-    
+    if (comment[strlen(comment) - 1] == 13) {
+      comment[strlen(comment) - 1] = 0;
+    }
+
     file.readBytesUntil('\n', aprshost, 255);
-    if (aprshost[strlen(aprshost)-1] == 13) {aprshost[strlen(aprshost)-1] = 0;}
-    
+    if (aprshost[strlen(aprshost) - 1] == 13) {
+      aprshost[strlen(aprshost) - 1] = 0;
+    }
+
     file.readBytesUntil('\n', symbol_str, 8);
-    if (symbol_str[strlen(symbol_str)-1] == 13) {symbol_str[strlen(symbol_str)-1] = 0;}
-    
+    if (symbol_str[strlen(symbol_str) - 1] == 13) {
+      symbol_str[strlen(symbol_str) - 1] = 0;
+    }
+
     file.readBytesUntil('\n', low_speed_str, 8);
-    if (low_speed_str[strlen(low_speed_str)-1] == 13) {low_speed_str[strlen(low_speed_str)-1] = 0;}
+    if (low_speed_str[strlen(low_speed_str) - 1] == 13) {
+      low_speed_str[strlen(low_speed_str) - 1] = 0;
+    }
     low_speed = atoi(low_speed_str);
-    
+
     file.readBytesUntil('\n', low_rate_str, 8);
-    if (low_rate_str[strlen(low_rate_str)-1] == 13) {low_rate_str[strlen(low_rate_str)-1] = 0;}
+    if (low_rate_str[strlen(low_rate_str) - 1] == 13) {
+      low_rate_str[strlen(low_rate_str) - 1] = 0;
+    }
     low_rate = atoi(low_rate_str);
-    
+
     file.readBytesUntil('\n', high_speed_str, 8);
-    if (high_speed_str[strlen(high_speed_str)-1] == 13) {high_speed_str[strlen(high_speed_str)-1] = 0;}
+    if (high_speed_str[strlen(high_speed_str) - 1] == 13) {
+      high_speed_str[strlen(high_speed_str) - 1] = 0;
+    }
     high_speed = atoi(high_speed_str);
-    
+
     file.readBytesUntil('\n', high_rate_str, 8);
-    if (high_rate_str[strlen(high_rate_str)-1] == 13) {high_rate_str[strlen(high_rate_str)-1] = 0;}
+    if (high_rate_str[strlen(high_rate_str) - 1] == 13) {
+      high_rate_str[strlen(high_rate_str) - 1] = 0;
+    }
     high_rate = atoi(high_rate_str);
-    
+
     file.readBytesUntil('\n', turn_min_str, 8);
-    if (turn_min_str[strlen(turn_min_str)-1] == 13) {turn_min_str[strlen(turn_min_str)-1] = 0;}
+    if (turn_min_str[strlen(turn_min_str) - 1] == 13) {
+      turn_min_str[strlen(turn_min_str) - 1] = 0;
+    }
     turn_min = atoi(turn_min_str);
-    
+
     file.readBytesUntil('\n', turn_slope_str, 8);
-    if (turn_slope_str[strlen(turn_slope_str)-1] == 13) {turn_slope_str[strlen(turn_slope_str)-1] = 0;}
+    if (turn_slope_str[strlen(turn_slope_str) - 1] == 13) {
+      turn_slope_str[strlen(turn_slope_str) - 1] = 0;
+    }
     turn_slope = atoi(turn_slope_str);
-    
+
     file.readBytesUntil('\n', turn_time_str, 8);
-    if (turn_time_str[strlen(turn_time_str)-1] == 13) {turn_time_str[strlen(turn_time_str)-1] = 0;}
+    if (turn_time_str[strlen(turn_time_str) - 1] == 13) {
+      turn_time_str[strlen(turn_time_str) - 1] = 0;
+    }
     turn_time = atoi(turn_time_str);
-    
+
     file.close();
   }
-  //Serial.printf("APRS: %s %s to %s with symbol %s\n", mycall, aprspass, aprshost, symbol_str);
-  //Serial.printf("APRS comment: %s\n", comment);
-  //Serial.printf("Low speed %i, Low rate %i, High speed %i, High rate %i, Turn min %i, Turn slope %i, Turn time %i\n", low_speed, low_rate, high_speed, high_rate, turn_min, turn_slope, turn_time);
 }
 
 // Function to read InfluxDB configuration from file.
@@ -466,11 +458,17 @@ static void readCfgInfluxDB()
   if (SPIFFS.exists("/influxdb.txt")) {
     file = SPIFFS.open("/influxdb.txt", "r");
     file.readBytesUntil('\n', url, 128);
-    if (url[strlen(url)-1] == 13) {url[strlen(url)-1] = 0;}
+    if (url[strlen(url) - 1] == 13) {
+      url[strlen(url) - 1] = 0;
+    }
     file.readBytesUntil('\n', userpass, 64);
-    if (userpass[strlen(userpass)-1] == 13) {userpass[strlen(userpass)-1] = 0;}
+    if (userpass[strlen(userpass) - 1] == 13) {
+      userpass[strlen(userpass) - 1] = 0;
+    }
     file.readBytesUntil('\n', measurement, 32);
-    if (measurement[strlen(measurement)-1] == 13) {measurement[strlen(measurement)-1] = 0;}
+    if (measurement[strlen(measurement) - 1] == 13) {
+      measurement[strlen(measurement) - 1] = 0;
+    }
     file.close();
     b64pass = String(userpass);
     b64pass.trim();
@@ -479,14 +477,14 @@ static void readCfgInfluxDB()
   // handle the InfluxDB url
   if (url[0] == 'h') {
     split_url(&urlp, url);
-                
-    Serial.printf("scheme %s\nhost %s\nport %d\npath %s\n\n",urlp.scheme, urlp.hostn, urlp.port, urlp.path);
+
+    Serial.printf("scheme %s\nhost %s\nport %d\npath %s\n\n", urlp.scheme, urlp.hostn, urlp.port, urlp.path);
 
     strcpy(scheme, urlp.scheme);
     strcpy(host, urlp.hostn);
     port = urlp.port;
     strcpy(path, urlp.path);
-    sprintf(url,"%s://%s:%d%s\0",scheme,host,port,path);
+    sprintf(url, "%s://%s:%d%s\0", scheme, host, port, path);
   }
 }
 
@@ -521,16 +519,82 @@ char* positionReportWithAltitude() {
 char* influxPositionReport() {
   static char report [256] = "";
   memset (report, '\0' , sizeof(report));
-  
+
   if (gps.location.isValid()) {
     sprintf(report, "%s,call=%s,tocall=%s lat=%s%f,lon=%s%f,cse=%0.0f,spd=%0.1f,alt=%0.1f,mod=%s",
-      measurement, mycall, APRSSOFTWARE,
-      (gps.location.rawLat().negative ? "-" : ""), (float)gps.location.lat(),
-      (gps.location.rawLng().negative ? "-" : ""), (float)gps.location.lng(),
-      (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(),gpsFix.value());
+            measurement, mycall, APRSSOFTWARE,
+            (gps.location.rawLat().negative ? "-" : ""), (float)gps.location.lat(),
+            (gps.location.rawLng().negative ? "-" : ""), (float)gps.location.lng(),
+            (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(), gpsFix.value());
   }
   return (report);
 }
+
+/* ------------------------------------------------------------------------------- */
+/* Connect to InfluxDB and send the data                                           */
+/* ------------------------------------------------------------------------------- */
+
+int sendInfluxData(char *influx_report) {
+  static int httpcode = 0;
+  String httpResponse = "";
+  // Send only of URL is set in configuration
+  if (url[0] == 'h' && influx_report[0] != '\0') {
+    // HTTPS client
+    if (strcmp(scheme, "https") == 0) {
+      if (httpsclient.connect(host, port)) {
+        httpsclient.printf("POST %s HTTP/1.1\nHost: %s\n", path, host);
+        httpsclient.printf("Content-Length: %d\nAuthorization: Basic ", strlen(influx_report));
+        httpsclient.print(b64pass);
+        httpsclient.print("\nConnection: close\n\n");
+        httpsclient.print(influx_report);
+
+        while (httpsclient.connected()) {
+          httpResponse = httpsclient.readStringUntil('\n');
+          Serial.println(httpResponse);
+          if(httpResponse.startsWith("HTTP")) {
+            int firstDelim = httpResponse.indexOf(" ");
+            int secondDelim = httpResponse.indexOf(" ", firstDelim + 1 );
+            httpcode = httpResponse.substring(firstDelim, secondDelim).toInt();
+            break;
+          }
+          Serial.printf("%i\n", httpcode);
+        }
+        httpsclient.stop();
+      } else {
+        Serial.printf("%s connect failed.\n", scheme);
+      }
+    }
+    // HTTP client
+    if (strcmp(scheme, "http") == 0) {
+      if (httpclient.connect(host, port)) {
+        httpclient.printf("POST %s HTTP/1.1\nHost: %s\n", path, host);
+        httpclient.printf("Content-Length: %d\nAuthorization: Basic ", strlen(influx_report));
+        httpclient.print(b64pass);
+        httpclient.print("\nConnection: close\n\n");
+        httpclient.print(influx_report);
+
+        while (httpclient.connected()) {
+          httpResponse = httpsclient.readStringUntil('\n');
+          Serial.println(httpResponse);
+          if(httpResponse.startsWith("HTTP")) {
+            int firstDelim = httpResponse.indexOf(" ");
+            int secondDelim = httpResponse.indexOf(" ", firstDelim + 1 );
+            httpcode = httpResponse.substring(firstDelim, secondDelim).toInt();
+            break;
+          }
+          Serial.printf("%i\n", httpcode);
+        }
+        httpclient.stop();
+      } else {
+        Serial.printf("%s connect failed.\n", scheme);
+      }
+    }
+  }
+  return httpcode;
+}
+/* ------------------------------------------------------------------------------- */
+/* updaeteDisplay()                                                         */
+/* ------------------------------------------------------------------------------- */
 
 #ifdef SSD1306_128_64
 void updateDisplay() {
@@ -541,7 +605,7 @@ void updateDisplay() {
   display.setTextColor(WHITE);
   display.clearDisplay();
 
-  // First line: Connected wifi and then my call right aligned. 
+  // First line: Connected wifi and then my call right aligned.
   display.drawPixel(7, 1, WHITE);
   display.drawPixel(5, 2, WHITE); display.drawPixel(8, 2, WHITE);
   display.drawPixel(6, 3, WHITE); display.drawPixel(9, 3, WHITE);
@@ -553,19 +617,19 @@ void updateDisplay() {
   display.setCursor(13, 1);
   display.print(currssid);
   // and right align mycall based on the screen width and
-  display.setCursor(OLED_WIDTH-(strlen(mycall)+1)*6, 1);
+  display.setCursor(OLED_WIDTH - (strlen(mycall) + 1) * 6, 1);
   display.print(mycall);
   display.print((aprs_ok ? "*" : " "));
 
   // Second line: Beacon comment
   display.setCursor(1, 9);
-  strncat(tmp, comment, 21); // Copy content of comment up-to 21 characters 
+  strncat(tmp, comment, 21); // Copy content of comment up-to 21 characters
   display.print(tmp); // and display it
   memset (tmp, '\0' , sizeof(tmp));
 
   // Sixth line: GPS Satellites and HDOP
   display.setCursor(1, 25);
-  switch(atoi(gpsFix.value())) {
+  switch (atoi(gpsFix.value())) {
     case 3:
       strncat(tmp, "3D", 2);
       break;
@@ -585,14 +649,14 @@ void updateDisplay() {
   // Fifth line: Latitude and longitude
   display.setCursor(1, 41);
   display.printf("%s %02.0f %05.2f %s%03.0f %05.2f",
-    (gps.location.rawLat().negative ? "S" : "N"), (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60,
-    (gps.location.rawLng().negative ? "W" : "E"), (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60);
-    display.drawPixel(27, 41, WHITE);
-    display.drawPixel(26, 42, WHITE); display.drawPixel(28, 42, WHITE);
-    display.drawPixel(27, 43, WHITE);
-    display.drawPixel(93, 41, WHITE);
-    display.drawPixel(92, 42, WHITE); display.drawPixel(94, 42, WHITE);
-    display.drawPixel(93, 43, WHITE);
+                 (gps.location.rawLat().negative ? "S" : "N"), (float)gps.location.rawLat().deg, (float)gps.location.rawLat().billionths / 1000000000 * 60,
+                 (gps.location.rawLng().negative ? "W" : "E"), (float)gps.location.rawLng().deg, (float)gps.location.rawLng().billionths / 1000000000 * 60);
+  display.drawPixel(27, 41, WHITE);
+  display.drawPixel(26, 42, WHITE); display.drawPixel(28, 42, WHITE);
+  display.drawPixel(27, 43, WHITE);
+  display.drawPixel(93, 41, WHITE);
+  display.drawPixel(92, 42, WHITE); display.drawPixel(94, 42, WHITE);
+  display.drawPixel(93, 43, WHITE);
 
   // Seventh line: not used
   // display.setCursor(11, 49);
@@ -600,11 +664,11 @@ void updateDisplay() {
   // Eighth line: Date and time
   display.setCursor(1, 57);
   display.printf("%4.0f-%02.0f-%02.0f  z%02.0f:%02.0f:%02.0f",
-  (float)gps.date.year(), (float)gps.date.month(), (float)gps.date.day(),
-  (float)gps.time.hour(), (float)gps.time.minute(), (float)gps.time.second());
+                 (float)gps.date.year(), (float)gps.date.month(), (float)gps.date.day(),
+                 (float)gps.time.hour(), (float)gps.time.minute(), (float)gps.time.second());
 
   // update display with all of the above graphics
-  display.display(); 
+  display.display();
 }
 #endif
 
@@ -868,24 +932,24 @@ void httpBoot() {
 }
 /* ------------------------------------------------------------------------------- */
 
-void httpDownload(){
-    String str = "";
-    file = SPIFFS.open(server.arg(0), "r");
-    if (!file) {
-      Serial.println("Can't open SPIFFS file !\r\n");         
+void httpDownload() {
+  String str = "";
+  file = SPIFFS.open(server.arg(0), "r");
+  if (!file) {
+    Serial.println("Can't open SPIFFS file !\r\n");
+  }
+  else {
+    char buf[1024];
+    int siz = file.size();
+    while (siz > 0) {
+      size_t len = std::min((int)(sizeof(buf) - 1), siz);
+      file.read((uint8_t *)buf, len);
+      buf[len] = 0;
+      str += buf;
+      siz -= sizeof(buf) - 1;
     }
-    else {
-      char buf[1024];
-      int siz = file.size();
-      while(siz > 0) {
-        size_t len = std::min((int)(sizeof(buf) - 1), siz);
-        file.read((uint8_t *)buf, len);
-        buf[len] = 0;
-        str += buf;
-        siz -= sizeof(buf) - 1;
-      }
-      file.close();
-      server.send(200, "text/plain", str);
-    }
+    file.close();
+    server.send(200, "text/plain", str);
+  }
 }
 /* ------------------------------------------------------------------------------- */

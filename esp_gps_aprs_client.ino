@@ -297,7 +297,6 @@ void loop() {
             lastBeaconMillis = currentMillis;
             // APRS-IS
             if (httpclient.connect(aprshost, aprsport)) {
-              Serial.printf("Connected to %s:%u\n", aprshost, aprsport);
               httpclient.printf("user %s pass %s\r\n", mycall, aprspass);
               delay(100);
               httpclient.printf("%s%s\r\n", report, comment);
@@ -550,14 +549,12 @@ int sendInfluxData(char *influx_report) {
 
         while (httpsclient.connected()) {
           httpResponse = httpsclient.readStringUntil('\n');
-          Serial.println(httpResponse);
           if(httpResponse.startsWith("HTTP")) {
             int firstDelim = httpResponse.indexOf(" ");
             int secondDelim = httpResponse.indexOf(" ", firstDelim + 1 );
             httpcode = httpResponse.substring(firstDelim, secondDelim).toInt();
             break;
           }
-          Serial.printf("%i\n", httpcode);
         }
         httpsclient.stop();
       } else {
@@ -575,14 +572,12 @@ int sendInfluxData(char *influx_report) {
 
         while (httpclient.connected()) {
           httpResponse = httpsclient.readStringUntil('\n');
-          Serial.println(httpResponse);
           if(httpResponse.startsWith("HTTP")) {
             int firstDelim = httpResponse.indexOf(" ");
             int secondDelim = httpResponse.indexOf(" ", firstDelim + 1 );
             httpcode = httpResponse.substring(firstDelim, secondDelim).toInt();
             break;
           }
-          Serial.printf("%i\n", httpcode);
         }
         httpclient.stop();
       } else {

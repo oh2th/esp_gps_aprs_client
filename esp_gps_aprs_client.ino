@@ -97,8 +97,7 @@ int low_speed, low_rate, high_speed, high_rate;
 char turn_time_str[8], turn_min_str[8], turn_slope_str[8];
 int turn_time, turn_min, turn_slope;
 unsigned long lastBeaconMillis;
-int send_now = 1;
-bool aprs_ok = false, influx_ok = false;
+bool send_now = true, aprs_ok = false, influx_ok = false;
 int prev_heading;
 
 // InfluxDB Configuration
@@ -288,12 +287,12 @@ void loop() {
               heading_change_since_beacon = ((cur_heading - prev_heading + 360) % 360);
             }
             if ((heading_change_since_beacon > turn_threshold) && (secs_since_beacon > turn_time)) {
-              send_now = 1;
+              send_now = true;
             }
           }
 
           // Send beacon if SmartBeacon interval (beacon_rate) is reached
-          if (secs_since_beacon > beacon_rate || send_now == 1) {
+          if (secs_since_beacon > beacon_rate || send_now) {
             lastBeaconMillis = currentMillis;
             // APRS-IS
             if (httpclient.connect(aprshost, aprsport)) {
@@ -317,15 +316,9 @@ void loop() {
                 influx_ok = false;
               }
             }
-            send_now = 0;
+            send_now = false;
           }
-        } else {
-          Serial.println(F("No report."));
-          send_now = 1;
         }
-      } else {
-        Serial.println(F("GPS is not ready."));
-        send_now = 1;
       }
 
       if (millis() > 5000 && gps.charsProcessed() < 10) {

@@ -97,13 +97,17 @@ int low_speed, low_rate, high_speed, high_rate;
 char turn_time_str[8], turn_min_str[8], turn_slope_str[8];
 int turn_time, turn_min, turn_slope;
 unsigned long lastBeaconMillis;
-bool send_now = true, aprs_ok = false, influx_ok = false;
+bool send_now = true, aprs_ok = false;
 int prev_heading;
 
 // InfluxDB Configuration
 char measurement[32];           // measurement name for InfluxDB
 char userpass[64];              // user:pass for InfluxDB
 String b64pass;                 // base64 encoded user:pass for basic auth
+// Influx position report
+bool influx_ok = false;
+double influx_prev_lat=0, influx_prev_lng=0;
+int distance_travelled=0;
 
 url_info urlp;
 char url[128];
@@ -312,6 +316,7 @@ void loop() {
               int httpcode = sendInfluxData(influxPositionReport());
               if(httpcode >= 200 and httpcode < 300) {
                 influx_ok = true;
+                distance_travelled = 0; // Reset also distance counter, we only report distance travelled from last successfull
               } else {
                 influx_ok = false;
               }
@@ -502,8 +507,9 @@ char* positionReportWithAltitude() {
 // -------------------------------------------------------------------------------
 // Report data for sending to InfluxDB where fields:
 // lat = latitude in decimal degrees
-// log = longitude in decimal degrees
+// lng = longitude in decimal degrees
 // cse = heading degrees from north
+// dst = distance travelled since previous report
 // spd = speed m/s
 // alt = altitude in decimal meters
 // mod = NMEA mode 1, 2 or 3
@@ -511,12 +517,21 @@ char* positionReportWithAltitude() {
 char* influxPositionReport() {
   static char report [256] = "";
   memset (report, '\0' , sizeof(report));
+  double curr_lat = gps.location.lat();
+  double curr_lng = gps.location.lng();
+  // To calculate distance travelled, we use current position initially if we did not have a previous position.
+  if(influx_prev_lat == 0 && influx_prev_lng == 0) {
+    influx_prev_lat = curr_lat;
+    influx_prev_lng = curr_lng;
+  }
+
+  distance_travelled += gps.distanceBetween(curr_lat, curr_lng, influx_prev_lat, influx_prev_lng);      
 
   if (gps.location.isValid()) {
     sprintf(report, "%s,call=%s,tocall=%s lat=%s%f,lon=%s%f,cse=%0.0f,spd=%0.1f,alt=%0.1f,mod=%s",
             measurement, mycall, APRSSOFTWARE,
-            (gps.location.rawLat().negative ? "-" : ""), (float)gps.location.lat(),
-            (gps.location.rawLng().negative ? "-" : ""), (float)gps.location.lng(),
+            (gps.location.rawLat().negative ? "-" : ""), (float)curr_lat,
+            (gps.location.rawLng().negative ? "-" : ""), (float)curr_lng,
             (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(), gpsFix.value());
   }
   return (report);

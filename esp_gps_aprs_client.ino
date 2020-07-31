@@ -509,10 +509,10 @@ char* positionReportWithAltitude() {
 // lat = latitude in decimal degrees
 // lng = longitude in decimal degrees
 // cse = heading degrees from north
-// dst = distance travelled since previous report
 // spd = speed m/s
 // alt = altitude in decimal meters
 // mod = NMEA mode 1, 2 or 3
+// dst = distance travelled in meters since previous report
 // -------------------------------------------------------------------------------
 char* influxPositionReport() {
   static char report [256] = "";
@@ -525,14 +525,15 @@ char* influxPositionReport() {
     influx_prev_lng = curr_lng;
   }
 
+  // Add travelled distannce to previous value. Previous value is 0 if it was successfully transmitted to Influx.
   distance_travelled += gps.distanceBetween(curr_lat, curr_lng, influx_prev_lat, influx_prev_lng);      
 
   if (gps.location.isValid()) {
-    sprintf(report, "%s,call=%s,tocall=%s lat=%s%f,lon=%s%f,cse=%0.0f,spd=%0.1f,alt=%0.1f,mod=%s",
+    sprintf(report, "%s,call=%s,tocall=%s lat=%s%f,lon=%s%f,cse=%0.0f,spd=%0.1f,alt=%0.1f,mod=%s,dst=%0.1f",
             measurement, mycall, APRSSOFTWARE,
             (gps.location.rawLat().negative ? "-" : ""), (float)curr_lat,
             (gps.location.rawLng().negative ? "-" : ""), (float)curr_lng,
-            (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(), gpsFix.value());
+            (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(), gpsFix.value(), (float)distance_travelled);
   }
   return (report);
 }

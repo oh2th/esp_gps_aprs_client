@@ -74,6 +74,7 @@ The data is update using fields:
 - spd = speed m/s
 - alt = altitude in decimal meters
 - mod = NMEA mode 1 - no fix, 2 - 2D fix or 3 - 3D fix
+- dst = distance travelled in meters since last successful update
 
 Update interval is tied to APRS SmartBeacon(TM). You should receive something like this in the database:
 

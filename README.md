@@ -79,13 +79,16 @@ The data is update using fields:
 Update interval is tied to APRS SmartBeacon(TM). You should receive something like this in the database:
 
 ```
-> select * from gps
+> select * from gps where time > 1596175233491768669
 name: gps
----------
-time                    alt     call    cse     lat             lon             mod     spd     tocall
-1589362483404306849     19      OH2TH-8 187     60.123456       24.543210       3       0.7     APESPG
-1589364288772944141     10.7    OH2TH-8 169     60.123456       24.543210       3       0       APESPG
-1589364516196077483     20.1    OH2TH-8 45      60.123456       24.543210       3       0.6     APESPG
+time                alt  call    cse dst lat       lon       mod spd tocall
+----                ---  ----    --- --- ---       ---       --- --- ------
+1596176422383069336 9.5  OH2TH-8 0   0   60.090664 19.954121 3   0   APESPG
+1596178223002983896 2.6  OH2TH-8 0   5   60.090675 19.954029 3   0   APESPG
+1596180025649181609 5.2  OH2TH-8 226 6   60.09066  19.95401  3   0   APESPG
+1596181829527106102 12.5 OH2TH-8 3   4   60.090698 19.954079 3   0.2 APESPG
+1596183251438975396 4    OH2TH-8 309 5   60.090672 19.95402  3   0.6 APESPG
+1596185053229894020 8.1  OH2TH-8 309 5   60.090694 19.954037 3   0   APESPG
 ```
 
 ## Display

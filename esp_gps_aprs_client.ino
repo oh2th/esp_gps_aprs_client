@@ -107,7 +107,7 @@ String b64pass;                 // base64 encoded user:pass for basic auth
 // Influx position report
 bool influx_ok = false;
 double influx_prev_lat=0, influx_prev_lng=0;
-int distance_travelled=0;
+int distance_travelled = 0;
 
 url_info urlp;
 char url[128];
@@ -316,7 +316,7 @@ void loop() {
               int httpcode = sendInfluxData(influxPositionReport());
               if(httpcode >= 200 and httpcode < 300) {
                 influx_ok = true;
-                distance_travelled = 0; // Reset also distance counter, we only report distance travelled from last successfull
+                distance_travelled = 0; // Reset also distance counter, we only report distance travelled from last successful update
               } else {
                 influx_ok = false;
               }
@@ -525,16 +525,22 @@ char* influxPositionReport() {
     influx_prev_lng = curr_lng;
   }
 
-  // Add travelled distannce to previous value. Previous value is 0 if it was successfully transmitted to Influx.
+  // Add travelled distance to previous value. Previous value is 0, if it was never updated since last boot or was successfully transmitted to Influx.
+  Serial.printf("Distance: Old (%f, %f) %d meters, ", influx_prev_lat, influx_prev_lng, distance_travelled);
   distance_travelled += gps.distanceBetween(curr_lat, curr_lng, influx_prev_lat, influx_prev_lng);      
+  Serial.printf("new  (%f, %f) %d meters\n", curr_lat, curr_lng, distance_travelled);
 
   if (gps.location.isValid()) {
-    sprintf(report, "%s,call=%s,tocall=%s lat=%s%f,lon=%s%f,cse=%0.0f,spd=%0.1f,alt=%0.1f,mod=%s,dst=%0.1f",
+    sprintf(report, "%s,call=%s,tocall=%s lat=%s%f,lon=%s%f,cse=%0.0f,spd=%0.1f,alt=%0.1f,mod=%s,dst=%d",
             measurement, mycall, APRSSOFTWARE,
             (gps.location.rawLat().negative ? "-" : ""), (float)curr_lat,
             (gps.location.rawLng().negative ? "-" : ""), (float)curr_lng,
-            (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(), gpsFix.value(), (float)distance_travelled);
+            (float)gps.course.deg(), (float)gps.speed.mps(), (float)gps.altitude.meters(), gpsFix.value(), distance_travelled);
   }
+  influx_prev_lat = curr_lat;
+  influx_prev_lng = curr_lng;
+
+  Serial.printf("Influx: %s\n", report);
   return (report);
 }
 
